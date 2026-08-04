@@ -1,13 +1,41 @@
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { useState } from "react";
-import StudentDashboard from "./StudentDashBoard";
-function App() {
-  const [count, setCount] = useState(0);
+import AdminLogin from "./pages/AdminLogin";
+import AdminDashboard from "./pages/AdminDashboard";
+import StudentLogin from "./pages/StudentLogin";
+import StudentDashboard from "./pages/StudentDashboard";
 
-  return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-6 py-16 text-slate-900">
-      <StudentDashboard/>
-    </main>
-  );
+function AdminSection() {
+  const [loggedIn, setLoggedIn] = useState(!!localStorage.getItem("adminToken"));
+
+  const handleLogout = () => {
+    localStorage.removeItem("adminToken");
+    setLoggedIn(false);
+  };
+
+  if (!loggedIn) return <AdminLogin onLogin={() => setLoggedIn(true)} />;
+  return <AdminDashboard onLogout={handleLogout} />;
 }
 
-export default App;
+function StudentSection() {
+  const [loggedIn, setLoggedIn] = useState(!!localStorage.getItem("studentToken"));
+
+  const handleLogout = () => {
+    localStorage.removeItem("studentToken");
+    setLoggedIn(false);
+  };
+
+  if (!loggedIn) return <StudentLogin onLogin={() => setLoggedIn(true)} />;
+  return <StudentDashboard onLogout={handleLogout} />;
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<StudentSection />} />
+        <Route path="/admin" element={<AdminSection />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
