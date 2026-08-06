@@ -362,10 +362,10 @@ export default function AdminDashboard({ onLogout }) {
         ))}
       </div>
 
-{tab === "Sessions" && <SessionsTab t={t} />}
-{tab === "Students" && <StudentsTab t={t} />}
-{tab === "Device" && <DeviceTab t={t} />}
-{tab === "Reports" && <ReportsTab t={t} />}
+      {tab === "Sessions" && <SessionsTab t={t} />}
+      {tab === "Students" && <StudentsTab t={t} />}
+      {tab === "Device" && <DeviceTab t={t} />}
+      {tab === "Reports" && <ReportsTab t={t} />}
     </div>
   );
 }
@@ -420,7 +420,7 @@ function buildWhatsappLink(session, recipient) {
   return `https://wa.me/?text=${body}`;
 }
 
-function SessionsTab({t}) {
+function SessionsTab({ t }) {
   const [sessions, setSessions] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [detail, setDetail] = useState(null);
@@ -543,7 +543,9 @@ function SessionsTab({t}) {
 
   const handleUpdate = async () => {
     if (!editingSessionId) {
-      alert("Select a session to update, or click new session to create another one.");
+      alert(
+        "Select a session to update, or click new session to create another one.",
+      );
       return;
     }
 
@@ -1003,12 +1005,15 @@ function SessionsTab({t}) {
   );
 }
 
-function StudentsTab({t}) {
+function StudentsTab({ t }) {
   const [pending, setPending] = useState([]);
   const [roster, setRoster] = useState([]);
   const [loading, setLoading] = useState(true);
   const [approveForm, setApproveForm] = useState({});
   const [showAddForm, setShowAddForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+const [editForm, setEditForm] = useState({});
+const [approvingId, setApprovingId] = useState(null);
   const [addForm, setAddForm] = useState({
     name: "",
     role: "",
@@ -1040,20 +1045,26 @@ function StudentsTab({t}) {
     }));
   };
 
-  const handleApprove = async (id) => {
-    const data = approveForm[id];
-    if (!data?.role || !data?.team || !data?.rfidUid) {
-      alert("fill role, team, and rfid card ID before approving");
-      return;
-    }
 
-    try {
-      await adminApi.approveStudent(id, data);
-      load();
-    } catch (err) {
-      alert(err.message);
-    }
-  };
+const handleApprove = async (id) => {
+  if (approvingId) return; // block if any approve is already in flight
+  const data = approveForm[id] || {};
+
+  if (!data.connectStudentId && (!data.role || !data.team || !data.rfidUid)) {
+    alert("fill role, team, and rfid card ID before approving");
+    return;
+  }
+
+  setApprovingId(id);
+  try {
+    await adminApi.approveStudent(id, data);
+    load();
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    setApprovingId(null);
+  }
+};
 
   const handleReject = async (id, name) => {
     if (!confirm(`reject ${name}? this will remove the pending request.`))
@@ -1071,12 +1082,10 @@ function StudentsTab({t}) {
     );
   };
 
-  const labelForStudent = (student) => {
-    const usernameLabel = student.username
-      ? ` · ${student.username}`
-      : " · no email yet";
-    return `${student.name}${usernameLabel}`;
-  };
+const labelForStudent = (student) => {
+  const label = student.username ? ` · ${student.username}` : " · no login yet";
+  return `${student.name}${label}`;
+};
 
   const handleAddStudent = async () => {
     if (!addForm.name || !addForm.role || !addForm.team || !addForm.rfidUid) {
@@ -1093,11 +1102,34 @@ function StudentsTab({t}) {
     }
   };
 
-  const handleDelete = async (id, name) => {
-    if (!confirm(`remove ${name}? this can't be undone.`)) return;
-    await adminApi.deleteStudent(id);
+  const startEdit = (s) => {
+  setEditingId(s.id);
+  setEditForm({ name: s.name, role: s.role || "", team: s.team || "", rfidUid: s.rfidUid || "" });
+};
+
+const handleReactivate = async (id) => {
+  try {
+    await adminApi.updateStudent(id, { isActive: true });
     load();
-  };
+  } catch (err) {
+    alert(err.message);
+  }
+};
+
+const handleSaveEdit = async (id) => {
+  try {
+    await adminApi.updateStudent(id, editForm);
+    setEditingId(null);
+    load();
+  } catch (err) {
+    alert(err.message);
+  }
+};
+const handleDelete = async (id, name) => {
+  if (!confirm(`deactivate ${name}? they'll be hidden from active roster but attendance history stays intact.`)) return;
+  await adminApi.deleteStudent(id);
+  load();
+};
 
   if (loading)
     return (
@@ -1218,6 +1250,7 @@ function StudentsTab({t}) {
                   onChange={(e) => updateForm(s.id, "rfidUid", e.target.value)}
                 />
                 <CaptureButton
+                  t={t}
                   onCaptured={(uid) => updateForm(s.id, "rfidUid", uid)}
                 />
                 <div className="pending-actions">
@@ -1362,6 +1395,7 @@ function StudentsTab({t}) {
               }
             />
             <CaptureButton
+              t={t}
               onCaptured={(uid) => setAddForm((f) => ({ ...f, rfidUid: uid }))}
             />
             <button
@@ -1379,80 +1413,176 @@ function StudentsTab({t}) {
           </div>
         )}
 
-        <div className="admin-roster-grid">
-          {roster.map((s) => (
-            <div
-              key={s.id}
-              className="admin-roster-card"
+<div className="admin-roster-grid">
+  {roster.map((s) => (
+    <div
+      key={s.id}
+      className="admin-roster-card"
+      style={{
+        background: t.muted,
+        padding: "12px",
+        opacity: s.isApproved ? 1 : 0.5,
+        position: "relative",
+      }}
+    >
+      <button
+        title="Remove student"
+        aria-label="Remove student"
+        onClick={() => handleDelete(s.id, s.name)}
+        style={{
+          position: "absolute",
+          top: "8px",
+          right: "8px",
+          width: "22px",
+          height: "22px",
+          border: `2px solid ${t.border}`,
+          background: t.panel,
+          color: t.ink,
+          fontSize: "11px",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 0,
+        }}
+      >
+        ✕
+      </button>
+
+      {editingId === s.id ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+          <input
+            className="brutal-input"
+            value={editForm.name}
+            onChange={(e) =>
+              setEditForm({ ...editForm, name: e.target.value })
+            }
+          />
+
+          <input
+            className="brutal-input"
+            placeholder="role"
+            list="role-options"
+            value={editForm.role}
+            onChange={(e) =>
+              setEditForm({ ...editForm, role: e.target.value })
+            }
+          />
+
+          <input
+            className="brutal-input"
+            placeholder="team"
+            list="team-options"
+            value={editForm.team}
+            onChange={(e) =>
+              setEditForm({ ...editForm, team: e.target.value })
+            }
+          />
+
+          <input
+            className="brutal-input"
+            placeholder="rfid card ID"
+            value={editForm.rfidUid}
+            onChange={(e) =>
+              setEditForm({ ...editForm, rfidUid: e.target.value })
+            }
+          />
+
+          <CaptureButton
+            t={t}
+            onCaptured={(uid) =>
+              setEditForm((f) => ({ ...f, rfidUid: uid }))
+            }
+          />
+
+          <div style={{ display: "flex", gap: "6px" }}>
+            <button
+              className="brutal-btn"
               style={{
-                background: t.muted,
-                padding: "12px",
-                opacity: s.isApproved ? 1 : 0.5,
-                position: "relative",
+                background: t.accentSolid,
+                color: "#fff",
+                padding: "6px 10px",
+                fontSize: "11px",
+              }}
+              onClick={() => handleSaveEdit(s.id)}
+            >
+              SAVE
+            </button>
+
+            <button
+              className="brutal-btn"
+              style={{
+                background: t.panel,
+                color: t.ink,
+                padding: "6px 10px",
+                fontSize: "11px",
+              }}
+              onClick={() => setEditingId(null)}
+            >
+              CANCEL
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          
+          <div
+            style={{
+              fontFamily: "Space Grotesk, sans-serif",
+              fontWeight: 700,
+              fontSize: "14px",
+              paddingRight: "24px",
+            }}
+          >
+            {s.name}
+          </div>
+
+          <div
+            style={{
+              fontFamily: "JetBrains Mono, monospace",
+              fontSize: "10px",
+              color: t.mutedText,
+            }}
+          >
+            {s.role || "—"} · {s.team || "—"}
+          </div>
+
+          {!s.isApproved && (
+            <div
+              style={{
+                fontFamily: "JetBrains Mono, monospace",
+                fontSize: "10px",
+                color: t.cyan,
+                marginTop: "4px",
               }}
             >
-              <button
-                title="Remove student"
-                aria-label="Remove student"
-                onClick={() => handleDelete(s.id, s.name)}
-                style={{
-                  position: "absolute",
-                  top: "8px",
-                  right: "8px",
-                  width: "22px",
-                  height: "22px",
-                  border: `2px solid ${t.border}`,
-                  background: t.panel,
-                  color: t.ink,
-                  fontSize: "11px",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  padding: 0,
-                }}
-              >
-                ✕
-              </button>
-              <div
-                style={{
-                  fontFamily: "Space Grotesk, sans-serif",
-                  fontWeight: 700,
-                  fontSize: "14px",
-                  paddingRight: "24px",
-                }}
-              >
-                {s.name}
-              </div>
-              <div
-                style={{
-                  fontFamily: "JetBrains Mono, monospace",
-                  fontSize: "10px",
-                  color: t.mutedText,
-                }}
-              >
-                {s.role || "—"} · {s.team || "—"}
-              </div>
-              {!s.isApproved && (
-                <div
-                  style={{
-                    fontFamily: "JetBrains Mono, monospace",
-                    fontSize: "10px",
-                    color: t.cyan,
-                    marginTop: "4px",
-                  }}
-                >
-                  pending
-                </div>
-              )}
+              pending
             </div>
-          ))}
-        </div>
+          )}
+
+          <button
+            className="brutal-btn"
+            style={{
+              marginTop: "8px",
+              background: t.panel,
+              color: t.ink,
+              padding: "4px 10px",
+              fontSize: "10px",
+            }}
+            onClick={() => startEdit(s)}
+          >
+            EDIT
+          </button>
+        </>
+      )}
+    </div>
+  ))}
+</div>
       </div>
     </div>
   );
 }
-function DeviceTab({t}) {
+function DeviceTab({ t }) {
   const [ssid, setSsid] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
@@ -1552,7 +1682,56 @@ function DeviceTab({t}) {
     </div>
   );
 }
-function ReportsTab({t}) {
+  function CaptureButton({ t, onCaptured }) {
+    const [capturing, setCapturing] = useState(false);
+    const [msg, setMsg] = useState("");
+
+    const handleClick = async () => {
+      setCapturing(true);
+      setMsg("waiting for tap...");
+      try {
+        const uid = await adminApi.captureCard();
+        onCaptured(uid);
+        setMsg("captured!");
+      } catch (err) {
+        setMsg(err.message);
+      } finally {
+        setCapturing(false);
+        setTimeout(() => setMsg(""), 2000);
+      }
+    };
+
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <button
+          type="button"
+          className="brutal-btn icon-btn"
+          style={{
+            background: t.cyan,
+            color: "#0B0F19",
+            fontSize: "11px",
+          }}
+          onClick={handleClick}
+          disabled={capturing}
+        >
+          {capturing ? "..." : "📇"}
+        </button>
+
+        {msg && (
+          <span
+            style={{
+              fontFamily: "JetBrains Mono, monospace",
+              fontSize: "10px",
+              color: t.mutedText,
+            }}
+          >
+            {msg}
+          </span>
+        )}
+      </div>
+    );
+  }
+function ReportsTab({ t }) {
   const [sessions, setSessions] = useState([]);
   const [studentCount, setStudentCount] = useState(0);
   const [loading, setLoading] = useState(true);

@@ -47,17 +47,27 @@ router.get("/", requireAuth, async (req, res) => {
 // update student (change role/team, reassign card, deactivate)
 router.patch("/:id", requireAuth, async (req, res) => {
   const { name, rfidUid, role, team, isActive } = req.body;
+  try {
+    const student = await prisma.student.update({
+      where: { id: req.params.id },
+      data: { name, rfidUid, role, team, isActive },
+    });
+    res.json(student);
+  } catch (err) {
+    if (err.code === "P2002") {
+      return res.status(409).json({ error: "that rfid card is already assigned to another student" });
+    }
+    res.status(500).json({ error: "server error" });
+  }
+});
+// delete student
+// deactivate student (soft delete - preserves attendance history)
+router.delete("/:id", requireAuth, async (req, res) => {
   const student = await prisma.student.update({
     where: { id: req.params.id },
-    data: { name, rfidUid, role, team, isActive },
+    data: { isActive: false },
   });
-  res.json(student);
-});
-
-// delete student
-router.delete("/:id", requireAuth, async (req, res) => {
-  await prisma.student.delete({ where: { id: req.params.id } });
-  res.json({ deleted: true });
+  res.json({ deactivated: true, student });
 });
 
 // public - student self-registration
@@ -98,44 +108,33 @@ router.get("/pending", requireAuth, async (req, res) => {
 router.patch("/:id/approve", requireAuth, async (req, res) => {
   const { role, team, rfidUid, connectStudentId } = req.body;
 
-  if (connectStudentId) {
-    const pendingStudent = await prisma.student.findUnique({
-      where: { id: req.params.id },
-    });
-    const targetStudent = await prisma.student.findUnique({
-      where: { id: connectStudentId },
-    });
+if (connectStudentId) {
+  const pendingStudent = await prisma.student.findUnique({ where: { id: req.params.id } });
+  const targetStudent = await prisma.student.findUnique({ where: { id: connectStudentId } });
 
-    if (!pendingStudent) {
-      return res.status(404).json({ error: "pending student not found" });
-    }
+  if (!pendingStudent) return res.status(404).json({ error: "pending student not found" });
+  if (!targetStudent) return res.status(404).json({ error: "selected student not found" });
+  if (targetStudent.username || targetStudent.passwordHash) {
+    return res.status(409).json({ error: "selected student already has a login account" });
+  }
 
-    if (!targetStudent) {
-      return res.status(404).json({ error: "selected student not found" });
-    }
-
-    if (targetStudent.username || targetStudent.passwordHash) {
-      return res
-        .status(409)
-        .json({ error: "selected student already has a login account" });
-    }
-
+  try {
     const updatedStudent = await prisma.$transaction(async (tx) => {
       const merged = await tx.student.update({
         where: { id: targetStudent.id },
-        data: {
-          username: pendingStudent.username,
-          passwordHash: pendingStudent.passwordHash,
-          isApproved: true,
-        },
+        data: { username: pendingStudent.username, passwordHash: pendingStudent.passwordHash, isApproved: true },
       });
-
       await tx.student.delete({ where: { id: pendingStudent.id } });
       return merged;
     });
-
     return res.json(updatedStudent);
+  } catch (err) {
+    if (err.code === "P2002") {
+      return res.status(409).json({ error: "this pending request may have already been approved - refresh n check the roster" });
+    }
+    return res.status(500).json({ error: "server error" });
   }
+}
 
   const student = await prisma.student.update({
     where: { id: req.params.id },

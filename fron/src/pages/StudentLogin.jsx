@@ -84,7 +84,7 @@ export default function StudentLogin({ onLogin }) {
           </>
         )}
 
-        <label style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "11px", opacity: 0.6 }}>USERNAME</label>
+        <label style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "11px", opacity: 0.6 }}>email</label>
         <input className="brutal-input" style={{ marginTop: "4px", marginBottom: "16px" }}
           value={username} onChange={(e) => setUsername(e.target.value)} />
 

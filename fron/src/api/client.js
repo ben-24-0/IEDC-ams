@@ -56,6 +56,8 @@ export const adminApi = {
       method: "PATCH",
       body: JSON.stringify(session),
     }),
+    updateStudent: (id, data) =>
+  request(`/students/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   startSession: (id) => request(`/sessions/${id}/start`, { method: "PATCH" }),
   closeSession: (id) => request(`/sessions/${id}/close`, { method: "PATCH" }),
   deleteSession: (id) => request(`/sessions/${id}`, { method: "DELETE" }),
