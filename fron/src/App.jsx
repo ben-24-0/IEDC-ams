@@ -3,7 +3,7 @@ import { useState } from "react";
 import AdminLogin from "./pages/AdminLogin";
 import AdminDashboard from "./pages/AdminDashboard";
 import StudentLogin from "./pages/StudentLogin";
-import StudentDashboard from "./pages/StudentDashboard";
+import StudentDashboard from "./pages/StudentDashBoard";
 
 function AdminSection() {
   const [loggedIn, setLoggedIn] = useState(!!localStorage.getItem("adminToken"));

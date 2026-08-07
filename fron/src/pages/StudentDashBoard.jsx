@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { studentApi } from "../api/client";
-
+import MinutesEditor from "../components/MinutesEditor";
 const TEAMS = [
   "ALL",
   "IEDC",
@@ -502,65 +502,65 @@ function CalendarView({
   );
 }
 
-function MinutesEditor({ t, session, canEdit }) {
-  const [minutes, setMinutes] = useState(session.minutes || "");
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState("");
+// function MinutesEditor({ t, session, canEdit }) {
+//   const [minutes, setMinutes] = useState(session.minutes || "");
+//   const [saving, setSaving] = useState(false);
+//   const [msg, setMsg] = useState("");
 
-  const handleFile = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    if (!file.name.endsWith(".txt")) {
-      alert("only .txt files supported right now");
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = (ev) => setMinutes(ev.target.result);
-    reader.readAsText(file);
-  };
+//   const handleFile = (e) => {
+//     const file = e.target.files[0];
+//     if (!file) return;
+//     if (!file.name.endsWith(".txt")) {
+//       alert("only .txt files supported right now");
+//       return;
+//     }
+//     const reader = new FileReader();
+//     reader.onload = (ev) => setMinutes(ev.target.result);
+//     reader.readAsText(file);
+//   };
 
-  const handleSave = async () => {
-    setSaving(true);
-    setMsg("");
-    try {
-      await studentApi.uploadMinutes(session.id, minutes);
-      setMsg("saved!");
-    } catch (err) {
-      setMsg(err.message);
-    } finally {
-      setSaving(false);
-      setTimeout(() => setMsg(""), 2000);
-    }
-  };
+//   const handleSave = async () => {
+//     setSaving(true);
+//     setMsg("");
+//     try {
+//       await studentApi.uploadMinutes(session.id, minutes);
+//       setMsg("saved!");
+//     } catch (err) {
+//       setMsg(err.message);
+//     } finally {
+//       setSaving(false);
+//       setTimeout(() => setMsg(""), 2000);
+//     }
+//   };
 
-  if (!canEdit) {
-    return (
-      <div style={{ fontSize: "13px", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
-        {session.minutes || "not recorded yet"}
-      </div>
-    );
-  }
+//   if (!canEdit) {
+//     return (
+//       <div style={{ fontSize: "13px", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+//         {session.minutes || "not recorded yet"}
+//       </div>
+//     );
+//   }
 
-  return (
-    <div>
-      <textarea
-        className="brutal-input"
-        style={{ width: "100%", minHeight: "120px", marginBottom: "8px", fontFamily: "JetBrains Mono, monospace", fontSize: "13px" }}
-        value={minutes}
-        onChange={(e) => setMinutes(e.target.value)}
-        placeholder="paste or type meeting minutes..."
-      />
-      <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-        <input type="file" accept=".txt" onChange={handleFile} style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "11px" }} />
-        <button className="brutal-btn" style={{ background: t.accentSolid, color: "#fff", padding: "7px 14px", fontSize: "12px" }}
-          onClick={handleSave} disabled={saving}>
-          {saving ? "..." : "SAVE MINUTES"}
-        </button>
-        {msg && <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "11px", color: t.cyan }}>{msg}</span>}
-      </div>
-    </div>
-  );
-}
+//   return (
+//     <div>
+//       <textarea
+//         className="brutal-input"
+//         style={{ width: "100%", minHeight: "120px", marginBottom: "8px", fontFamily: "JetBrains Mono, monospace", fontSize: "13px" }}
+//         value={minutes}
+//         onChange={(e) => setMinutes(e.target.value)}
+//         placeholder="paste or type meeting minutes..."
+//       />
+//       <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+//         <input type="file" accept=".txt" onChange={handleFile} style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "11px" }} />
+//         <button className="brutal-btn" style={{ background: t.accentSolid, color: "#fff", padding: "7px 14px", fontSize: "12px" }}
+//           onClick={handleSave} disabled={saving}>
+//           {saving ? "..." : "SAVE MINUTES"}
+//         </button>
+//         {msg && <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "11px", color: t.cyan }}>{msg}</span>}
+//       </div>
+//     </div>
+//   );
+// }
 
 export default function StudentDashboard({ onLogout }) {
   const [mode, setMode] = useState("light");
@@ -1123,17 +1123,25 @@ const rows = useMemo(() => {
         </div>
       </div>
 
-      <details open>
+<details open>
         <summary style={{ fontFamily: "Space Grotesk, sans-serif", fontSize: "14px", cursor: "pointer", color: t.mutedText, marginBottom: "10px" }}>
-          AGENDA &amp; MINUTES
+          AGENDA & MINUTES
         </summary>
         <div style={{ marginTop: "10px" }}>
           <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "10px", color: t.mutedText, marginBottom: "4px" }}>AGENDA</div>
           <div style={{ fontSize: "13px", lineHeight: 1.5, whiteSpace: "pre-wrap", marginBottom: "16px" }}>
             {session.agenda || "not set"}
           </div>
+          
           <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "10px", color: t.mutedText, marginBottom: "4px" }}>MINUTES</div>
-          <MinutesEditor t={t} session={session} canEdit={isDocTeam} />
+          
+          {/* 2. Drop the component here and pass the props */}
+          <MinutesEditor 
+            t={t} 
+            session={session} 
+            canEdit={isDocTeam} 
+          />
+          
         </div>
       </details>
     </div>

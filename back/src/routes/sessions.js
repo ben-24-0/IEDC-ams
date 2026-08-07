@@ -192,7 +192,7 @@ router.patch("/:id/confirm", requireAuth, async (req, res) => {
 
 // student-facing - documentation team members can upload/edit minutes
 router.patch("/:id/minutes", requireAuth, async (req, res) => {
-  const studentId = req.admin.studentId; // student tokens carry studentId, not adminId
+  const studentId = req.admin.studentId; 
   if (!studentId) return res.status(403).json({ error: "student login required" });
 
   const student = await prisma.student.findUnique({ where: { id: studentId } });
@@ -202,6 +202,11 @@ router.patch("/:id/minutes", requireAuth, async (req, res) => {
 
   const existing = await prisma.session.findUnique({ where: { id: req.params.id } });
   if (!existing) return res.status(404).json({ error: "not found" });
+
+  // FIXED: Matches your Prisma enum for SessionStatus
+  if (existing.status === "SCHEDULED") {
+    return res.status(400).json({ error: "Session must be ACTIVE or CLOSED to add minutes." });
+  }
 
   const session = await prisma.session.update({
     where: { id: req.params.id },

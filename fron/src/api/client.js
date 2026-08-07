@@ -1,4 +1,4 @@
-const BASE_URL = "http://localhost:4000/api";
+const BASE_URL = "https://iedc-ams.onrender.com";
 
 async function request(path, options = {}, tokenKey = "adminToken") {
   const token = localStorage.getItem(tokenKey);
