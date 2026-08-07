@@ -1006,14 +1006,26 @@ function SessionsTab({ t }) {
 }
 
 function StudentsTab({ t }) {
+  const [activeTab, setActiveTab] = useState("roster");
   const [pending, setPending] = useState([]);
   const [roster, setRoster] = useState([]);
+  const [archived, setArchived] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Filters & Search
+  const [rosterSearch, setRosterSearch] = useState("");
+  const [rosterTeamFilter, setRosterTeamFilter] = useState("");
+  const [rosterRoleFilter, setRosterRoleFilter] = useState("");
+  const [archivedSearch, setArchivedSearch] = useState("");
+  const [pendingSearchTerms, setPendingSearchTerms] = useState({});
+
+  // Forms & State
   const [approveForm, setApproveForm] = useState({});
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
-const [editForm, setEditForm] = useState({});
-const [approvingId, setApprovingId] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [approvingId, setApprovingId] = useState(null);
+  const [statusNotice, setStatusNotice] = useState(null);
   const [addForm, setAddForm] = useState({
     name: "",
     role: "",
@@ -1023,73 +1035,74 @@ const [approvingId, setApprovingId] = useState(null);
 
   const load = async () => {
     setLoading(true);
-    const [p, r] = await Promise.all([
-      adminApi.getPendingStudents(),
-      adminApi.getStudents(),
-    ]);
-    setPending(p);
-    setRoster(r);
-    setLoading(false);
+    try {
+      const [p, r, a] = await Promise.all([
+        adminApi.getPendingStudents(),
+        adminApi.getStudents(),
+        adminApi.getArchivedStudents
+          ? adminApi.getArchivedStudents()
+          : adminApi.getArchived
+          ? adminApi.getArchived()
+          : [],
+      ]);
+      setPending(p || []);
+      setRoster(r || []);
+      setArchived(a || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
     load();
   }, []);
 
-  const rosterCandidates = roster.filter((student) => student.isApproved);
-
-  const updateForm = (id, field, value) => {
-    setApproveForm((prev) => ({
-      ...prev,
-      [id]: { ...prev[id], [field]: value },
-    }));
+  const showToast = (msg) => {
+    setStatusNotice(msg);
+    setTimeout(() => setStatusNotice(null), 4000);
   };
 
+  // Safe fallback arrays for option datalists
+  const teamsList = typeof TEAM_OPTIONS !== "undefined" ? TEAM_OPTIONS : Array.from(new Set(roster.map(s => s.team).filter(Boolean)));
+  const rolesList = typeof ROLE_OPTIONS !== "undefined" ? ROLE_OPTIONS : Array.from(new Set(roster.map(s => s.role).filter(Boolean)));
 
-const handleApprove = async (id) => {
-  if (approvingId) return; // block if any approve is already in flight
-  const data = approveForm[id] || {};
+  // --- Handlers ---
+  const handleApprove = async (id) => {
+    if (approvingId) return;
+    const selectedStudentId = approveForm[id]?.studentId;
 
-  if (!data.connectStudentId && (!data.role || !data.team || !data.rfidUid)) {
-    alert("fill role, team, and rfid card ID before approving");
-    return;
-  }
+    if (!selectedStudentId) {
+      alert("Select a roster member to link this registration to");
+      return;
+    }
 
-  setApprovingId(id);
-  try {
-    await adminApi.approveStudent(id, data);
-    load();
-  } catch (err) {
-    alert(err.message);
-  } finally {
-    setApprovingId(null);
-  }
-};
+    setApprovingId(id);
+    try {
+      await adminApi.approveStudent(id, selectedStudentId);
+      load();
+    } catch (err) {
+      alert(err.message || "Approval failed");
+    } finally {
+      setApprovingId(null);
+    }
+  };
 
   const handleReject = async (id, name) => {
-    if (!confirm(`reject ${name}? this will remove the pending request.`))
+    if (!confirm(`Reject ${name}? This will remove the pending request completely.`))
       return;
-    await adminApi.rejectStudent(id);
-    load();
+    try {
+      await adminApi.rejectStudent(id);
+      load();
+    } catch (err) {
+      alert(err.message || "Rejection failed");
+    }
   };
-
-  const findMatchingRosterStudent = (pendingStudent) => {
-    const normalizedName = pendingStudent.name.trim().toLowerCase();
-    return (
-      rosterCandidates.find(
-        (student) => student.name.trim().toLowerCase() === normalizedName,
-      )?.id || ""
-    );
-  };
-
-const labelForStudent = (student) => {
-  const label = student.username ? ` · ${student.username}` : " · no login yet";
-  return `${student.name}${label}`;
-};
 
   const handleAddStudent = async () => {
     if (!addForm.name || !addForm.role || !addForm.team || !addForm.rfidUid) {
-      alert("fill all fields");
+      alert("Please fill all fields");
       return;
     }
     try {
@@ -1098,487 +1111,1024 @@ const labelForStudent = (student) => {
       setShowAddForm(false);
       load();
     } catch (err) {
-      alert(err.message);
+      alert(err.message || "Failed to add student");
     }
   };
 
   const startEdit = (s) => {
-  setEditingId(s.id);
-  setEditForm({ name: s.name, role: s.role || "", team: s.team || "", rfidUid: s.rfidUid || "" });
-};
+    setEditingId(s.id);
+    setEditForm({
+      name: s.name,
+      role: s.role || "",
+      team: s.team || "",
+      rfidUid: s.rfidUid || "",
+    });
+  };
 
-const handleReactivate = async (id) => {
-  try {
-    await adminApi.updateStudent(id, { isActive: true });
-    load();
-  } catch (err) {
-    alert(err.message);
-  }
-};
+  const handleSaveEdit = async (id) => {
+    try {
+      await adminApi.updateStudent(id, editForm);
+      setEditingId(null);
+      load();
+    } catch (err) {
+      alert(err.message || "Update failed");
+    }
+  };
 
-const handleSaveEdit = async (id) => {
-  try {
-    await adminApi.updateStudent(id, editForm);
-    setEditingId(null);
-    load();
-  } catch (err) {
-    alert(err.message);
-  }
-};
-const handleDelete = async (id, name) => {
-  if (!confirm(`deactivate ${name}? they'll be hidden from active roster but attendance history stays intact.`)) return;
-  await adminApi.deleteStudent(id);
-  load();
-};
+  const handleDeleteStudent = async (id, name) => {
+    if (!confirm(`Deactivate/Delete ${name}?`)) return;
+    try {
+      const res = await adminApi.deleteStudent(id);
+      if (res && res.action === "deleted") {
+        showToast("Student permanently deleted");
+      } else if (res && res.action === "archived") {
+        showToast("Student archived because attendance history exists.");
+      } else {
+        showToast(`Updated ${name}`);
+      }
+      load();
+    } catch (err) {
+      alert(err.message || "Delete failed");
+    }
+  };
 
-  if (loading)
+  const handleRestoreArchived = async (id) => {
+    try {
+      await adminApi.restoreStudent(id);
+      showToast("Student restored to active roster.");
+      load();
+    } catch (err) {
+      alert(err.message || "Restore failed");
+    }
+  };
+
+  const handleDeleteArchived = async (id, name) => {
+    if (!confirm(`Permanently delete ${name}? This action cannot be undone.`))
+      return;
+    try {
+      if (adminApi.deleteArchivedStudent) {
+        await adminApi.deleteArchivedStudent(id);
+      } else if (adminApi.deleteArchived) {
+        await adminApi.deleteArchived(id);
+      }
+      showToast("Student permanently deleted.");
+      load();
+    } catch (err) {
+      alert(err.message || "Permanent delete failed");
+    }
+  };
+
+  // --- Filtering Logic ---
+  const filteredRoster = roster.filter((student) => {
+    const q = rosterSearch.toLowerCase().trim();
+    const matchesSearch =
+      !q ||
+      student.name?.toLowerCase().includes(q) ||
+      student.role?.toLowerCase().includes(q) ||
+      student.team?.toLowerCase().includes(q);
+    const matchesTeam = !rosterTeamFilter || student.team === rosterTeamFilter;
+    const matchesRole = !rosterRoleFilter || student.role === rosterRoleFilter;
+    return matchesSearch && matchesTeam && matchesRole;
+  });
+
+  const filteredArchived = archived.filter((student) => {
+    const q = archivedSearch.toLowerCase().trim();
     return (
-      <div style={{ fontFamily: "JetBrains Mono, monospace", opacity: 0.6 }}>
+      !q ||
+      student.name?.toLowerCase().includes(q) ||
+      student.role?.toLowerCase().includes(q) ||
+      student.team?.toLowerCase().includes(q)
+    );
+  });
+
+  const getPendingRosterSuggestions = (pendingId) => {
+    const q = (pendingSearchTerms[pendingId] || "").toLowerCase().trim();
+    return roster.filter((student) => {
+      if (student.isActive === false) return false;
+      if (student.username) return false; // Already linked to an account
+      if (!q) return true;
+      return (
+        student.name?.toLowerCase().includes(q) ||
+        student.role?.toLowerCase().includes(q) ||
+        student.team?.toLowerCase().includes(q)
+      );
+    });
+  };
+
+  if (loading) {
+    return (
+      <div
+        style={{
+          fontFamily: "JetBrains Mono, monospace",
+          padding: "20px",
+          opacity: 0.6,
+        }}
+      >
         loading...
       </div>
     );
+  }
 
   return (
-    <div>
+    <div style={{ fontFamily: "Space Grotesk, sans-serif" }}>
       <datalist id="team-options">
-        {TEAM_OPTIONS.map((team) => (
+        {teamsList.map((team) => (
           <option key={team} value={team} />
         ))}
       </datalist>
       <datalist id="role-options">
-        {ROLE_OPTIONS.map((role) => (
+        {rolesList.map((role) => (
           <option key={role} value={role} />
         ))}
       </datalist>
 
-      {/* pending approvals */}
-      <div style={{ marginBottom: "28px" }}>
-        <h2
+      {/* Notification Toast */}
+      {statusNotice && (
+        <div
           style={{
-            fontFamily: "Space Grotesk, sans-serif",
-            fontSize: "18px",
-            marginBottom: "12px",
+            marginBottom: "16px",
+            padding: "10px 14px",
+            background: t.cyan || "#00E5FF",
+            color: "#000",
+            border: `2px solid ${t.border || "#000"}`,
+            boxShadow: "3px 3px 0 #000",
+            fontFamily: "JetBrains Mono, monospace",
+            fontSize: "12px",
+            fontWeight: 700,
           }}
         >
-          PENDING APPROVAL{" "}
-          <span style={{ color: t.cyan }}>({pending.length})</span>
-        </h2>
-        {pending.length === 0 ? (
+          {statusNotice}
+        </div>
+      )}
+
+      {/* Tab Header Navigation */}
+      <div
+        style={{
+          display: "flex",
+          gap: "10px",
+          borderBottom: `3px solid ${t.border || "#000"}`,
+          paddingBottom: "10px",
+          marginBottom: "24px",
+          overflowX: "auto",
+        }}
+      >
+        {[
+          { id: "roster", label: "Current Roster", count: roster.length },
+          { id: "pending", label: "Pending Approvals", count: pending.length },
+          { id: "archived", label: "Archived", count: archived.length },
+        ].map((tab) => {
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className="brutal-btn"
+              style={{
+                fontFamily: "Space Grotesk, sans-serif",
+                fontWeight: 700,
+                fontSize: "13px",
+                padding: "8px 16px",
+                cursor: "pointer",
+                background: isActive ? t.cyan || "#00E5FF" : t.panel || "#fff",
+                color: isActive ? "#000" : t.ink || "#000",
+                border: `2px solid ${t.border || "#000"}`,
+                boxShadow: isActive ? "3px 3px 0 #000" : "2px 2px 0 #000",
+                transition: "all 0.15s ease",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                whiteSpace: "nowrap",
+              }}
+            >
+              <span>{tab.label}</span>
+              <span
+                style={{
+                  fontFamily: "JetBrains Mono, monospace",
+                  fontSize: "11px",
+                  background: isActive ? "#000" : t.muted || "#eee",
+                  color: isActive ? "#fff" : t.ink || "#000",
+                  padding: "2px 6px",
+                  borderRadius: "3px",
+                }}
+              >
+                {tab.count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ================= TAB 1: CURRENT ROSTER ================= */}
+      {activeTab === "roster" && (
+        <div>
+          {/* Toolbar */}
           <div
-            style={{
-              fontFamily: "JetBrains Mono, monospace",
-              fontSize: "13px",
-              opacity: 0.5,
-            }}
+style={{
+  display: "flex",
+  flexWrap: "wrap",
+  gap: "10px",
+  justifyContent: "space-between", // 👈 Fixed CSS camelCase property
+  alignItems: "center",
+  marginBottom: "16px",
+}}
           >
-            no pending registrations
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "8px",
+                flex: 1,
+              }}
+            >
+              <input
+                className="brutal-input"
+                placeholder="search by name, role, team..."
+                value={rosterSearch}
+                onChange={(e) => setRosterSearch(e.target.value)}
+                style={{ minWidth: "200px", flex: 1 }}
+              />
+              <select
+                className="brutal-input"
+                value={rosterTeamFilter}
+                onChange={(e) => setRosterTeamFilter(e.target.value)}
+                style={{
+                  padding: "8px",
+                  fontFamily: "JetBrains Mono, monospace",
+                  fontSize: "12px",
+                }}
+              >
+                <option value="">All Teams</option>
+                {teamsList.map((tm) => (
+                  <option key={tm} value={tm}>
+                    {tm}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="brutal-input"
+                value={rosterRoleFilter}
+                onChange={(e) => setRosterRoleFilter(e.target.value)}
+                style={{
+                  padding: "8px",
+                  fontFamily: "JetBrains Mono, monospace",
+                  fontSize: "12px",
+                }}
+              >
+                <option value="">All Roles</option>
+                {rolesList.map((rl) => (
+                  <option key={rl} value={rl}>
+                    {rl}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              className="brutal-btn"
+              style={{
+                background: t.cyan || "#00E5FF",
+                color: "#0B0F19",
+                padding: "8px 16px",
+                fontWeight: 700,
+                fontSize: "12px",
+                boxShadow: "3px 3px 0 #000",
+              }}
+              onClick={() => setShowAddForm(!showAddForm)}
+            >
+              {showAddForm ? "CANCEL" : "+ ADD STUDENT"}
+            </button>
           </div>
-        ) : (
-          <div className="admin-pending-list">
-            {pending.map((s) => (
-              <div key={s.id} className="admin-pending-card">
-                <div
-                  className="pending-name"
-                  style={{
-                    fontFamily: "Space Grotesk, sans-serif",
-                    fontWeight: 700,
-                    fontSize: "15px",
-                  }}
-                >
-                  {s.name}
-                  <div
-                    style={{
-                      fontFamily: "JetBrains Mono, monospace",
-                      fontSize: "10px",
-                      opacity: 0.7,
-                      fontWeight: 400,
-                    }}
-                  >
-                    email: {s.username}
-                  </div>
-                </div>
-                <div style={{ minWidth: 0 }}>
-                  <div
-                    style={{
-                      fontFamily: "JetBrains Mono, monospace",
-                      fontSize: "10px",
-                      opacity: 0.55,
-                      marginBottom: "4px",
-                    }}
-                  >
-                    connect to existing student
-                  </div>
-                  <select
-                    className="brutal-input"
-                    value={
-                      approveForm[s.id]?.connectStudentId ||
-                      findMatchingRosterStudent(s)
-                    }
-                    onChange={(e) =>
-                      updateForm(s.id, "connectStudentId", e.target.value)
-                    }
-                    style={{ width: "100%" }}
-                  >
-                    <option value="">keep as new login account</option>
-                    {rosterCandidates.map((student) => (
-                      <option key={student.id} value={student.id}>
-                        {labelForStudent(student)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+
+          {/* Add Student Form Card */}
+          {showAddForm && (
+            <div
+              style={{
+                border: `3px solid ${t.border || "#000"}`,
+                background: t.panel || "#fff",
+                padding: "16px",
+                marginBottom: "20px",
+                boxShadow: "4px 4px 0 #000",
+              }}
+            >
+              <div
+                style={{
+                  fontWeight: 700,
+                  marginBottom: "12px",
+                  fontSize: "14px",
+                }}
+              >
+                ADD NEW STUDENT
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: "10px",
+                  alignItems: "center",
+                }}
+              >
+                <input
+                  className="brutal-input"
+                  placeholder="name"
+                  style={{ width: "160px" }}
+                  value={addForm.name}
+                  onChange={(e) =>
+                    setAddForm({ ...addForm, name: e.target.value })
+                  }
+                />
                 <input
                   className="brutal-input"
                   placeholder="role"
                   list="role-options"
                   autoComplete="off"
-                  value={approveForm[s.id]?.role || ""}
-                  onChange={(e) => updateForm(s.id, "role", e.target.value)}
+                  style={{ width: "140px" }}
+                  value={addForm.role}
+                  onChange={(e) =>
+                    setAddForm({ ...addForm, role: e.target.value })
+                  }
                 />
                 <input
                   className="brutal-input"
                   placeholder="team"
                   list="team-options"
                   autoComplete="off"
-                  value={approveForm[s.id]?.team || ""}
-                  onChange={(e) => updateForm(s.id, "team", e.target.value)}
+                  style={{ width: "130px" }}
+                  value={addForm.team}
+                  onChange={(e) =>
+                    setAddForm({ ...addForm, team: e.target.value })
+                  }
                 />
                 <input
                   className="brutal-input"
-                  placeholder="rfid card ID"
-                  value={approveForm[s.id]?.rfidUid || ""}
-                  onChange={(e) => updateForm(s.id, "rfidUid", e.target.value)}
+                  placeholder="RFID Card ID"
+                  style={{ width: "150px" }}
+                  value={addForm.rfidUid}
+                  onChange={(e) =>
+                    setAddForm({ ...addForm, rfidUid: e.target.value })
+                  }
                 />
-                <CaptureButton
-                  t={t}
-                  onCaptured={(uid) => updateForm(s.id, "rfidUid", uid)}
-                />
-                <div className="pending-actions">
-                  <button
-                    className="brutal-btn icon-btn"
-                    title="Approve"
-                    aria-label="Approve"
-                    style={{
-                      background: t.accentSolid,
-                      color: "#fff",
-                      fontSize: "12px",
-                    }}
-                    onClick={() => handleApprove(s.id)}
-                  >
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d="M20 6L9 17l-5-5"
-                        stroke="currentColor"
-                        strokeWidth="2.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </button>
-                  <button
-                    className="brutal-btn icon-btn"
-                    title="Reject"
-                    aria-label="Reject"
-                    style={{
-                      background: "#FF5C5C",
-                      color: "#fff",
-                      fontSize: "12px",
-                    }}
-                    onClick={() => handleReject(s.id, s.name)}
-                  >
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d="M6 6l12 12M18 6L6 18"
-                        stroke="currentColor"
-                        strokeWidth="2.5"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                  </button>
-                </div>
+                {typeof CaptureButton !== "undefined" && (
+                  <CaptureButton
+                    t={t}
+                    onCaptured={(uid) =>
+                      setAddForm((f) => ({ ...f, rfidUid: uid }))
+                    }
+                  />
+                )}
+                <button
+                  className="brutal-btn"
+                  style={{
+                    background: "#22C55E",
+                    color: "#fff",
+                    padding: "8px 16px",
+                    fontWeight: 700,
+                    fontSize: "12px",
+                    boxShadow: "2px 2px 0 #000",
+                  }}
+                  onClick={handleAddStudent}
+                >
+                  SAVE
+                </button>
               </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* roster + add student */}
-      <div>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: "12px",
-          }}
-        >
-          <h2
-            style={{
-              fontFamily: "Space Grotesk, sans-serif",
-              fontSize: "18px",
-            }}
-          >
-            ROSTER{" "}
-            <span style={{ color: t.mutedText, fontSize: "14px" }}>
-              ({roster.length})
-            </span>
-          </h2>
-          <button
-            className="brutal-btn"
-            style={{
-              background: t.cyan,
-              color: "#0B0F19",
-              padding: "7px 14px",
-              fontSize: "12px",
-            }}
-            onClick={() => setShowAddForm(!showAddForm)}
-          >
-            {showAddForm ? "CANCEL" : "+ ADD STUDENT"}
-          </button>
-        </div>
-
-        {showAddForm && (
-          <div
-            className="admin-create-row"
-            style={{
-              border: `3px solid ${t.border}`,
-              background: t.panel,
-              padding: "14px",
-              marginBottom: "16px",
-              alignItems: "center",
-            }}
-          >
-            <input
-              className="brutal-input"
-              placeholder="name"
-              style={{ width: "160px" }}
-              value={addForm.name}
-              onChange={(e) => setAddForm({ ...addForm, name: e.target.value })}
-            />
-            <input
-              className="brutal-input"
-              placeholder="role"
-              list="role-options"
-              autoComplete="off"
-              style={{ width: "140px" }}
-              value={addForm.role}
-              onChange={(e) => setAddForm({ ...addForm, role: e.target.value })}
-            />
-            <input
-              className="brutal-input"
-              placeholder="team"
-              list="team-options"
-              autoComplete="off"
-              style={{ width: "130px" }}
-              value={addForm.team}
-              onChange={(e) => setAddForm({ ...addForm, team: e.target.value })}
-            />
-            <input
-              className="brutal-input"
-              placeholder="rfid card ID"
-              style={{ width: "150px" }}
-              value={addForm.rfidUid}
-              onChange={(e) =>
-                setAddForm({ ...addForm, rfidUid: e.target.value })
-              }
-            />
-            <CaptureButton
-              t={t}
-              onCaptured={(uid) => setAddForm((f) => ({ ...f, rfidUid: uid }))}
-            />
-            <button
-              className="brutal-btn"
-              style={{
-                background: t.accentSolid,
-                color: "#fff",
-                padding: "8px 14px",
-                fontSize: "12px",
-              }}
-              onClick={handleAddStudent}
-            >
-              SAVE
-            </button>
-          </div>
-        )}
-
-<div className="admin-roster-grid">
-  {roster.map((s) => (
-    <div
-      key={s.id}
-      className="admin-roster-card"
-      style={{
-        background: t.muted,
-        padding: "12px",
-        opacity: s.isApproved ? 1 : 0.5,
-        position: "relative",
-      }}
-    >
-      <button
-        title="Remove student"
-        aria-label="Remove student"
-        onClick={() => handleDelete(s.id, s.name)}
-        style={{
-          position: "absolute",
-          top: "8px",
-          right: "8px",
-          width: "22px",
-          height: "22px",
-          border: `2px solid ${t.border}`,
-          background: t.panel,
-          color: t.ink,
-          fontSize: "11px",
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 0,
-        }}
-      >
-        ✕
-      </button>
-
-      {editingId === s.id ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-          <input
-            className="brutal-input"
-            value={editForm.name}
-            onChange={(e) =>
-              setEditForm({ ...editForm, name: e.target.value })
-            }
-          />
-
-          <input
-            className="brutal-input"
-            placeholder="role"
-            list="role-options"
-            value={editForm.role}
-            onChange={(e) =>
-              setEditForm({ ...editForm, role: e.target.value })
-            }
-          />
-
-          <input
-            className="brutal-input"
-            placeholder="team"
-            list="team-options"
-            value={editForm.team}
-            onChange={(e) =>
-              setEditForm({ ...editForm, team: e.target.value })
-            }
-          />
-
-          <input
-            className="brutal-input"
-            placeholder="rfid card ID"
-            value={editForm.rfidUid}
-            onChange={(e) =>
-              setEditForm({ ...editForm, rfidUid: e.target.value })
-            }
-          />
-
-          <CaptureButton
-            t={t}
-            onCaptured={(uid) =>
-              setEditForm((f) => ({ ...f, rfidUid: uid }))
-            }
-          />
-
-          <div style={{ display: "flex", gap: "6px" }}>
-            <button
-              className="brutal-btn"
-              style={{
-                background: t.accentSolid,
-                color: "#fff",
-                padding: "6px 10px",
-                fontSize: "11px",
-              }}
-              onClick={() => handleSaveEdit(s.id)}
-            >
-              SAVE
-            </button>
-
-            <button
-              className="brutal-btn"
-              style={{
-                background: t.panel,
-                color: t.ink,
-                padding: "6px 10px",
-                fontSize: "11px",
-              }}
-              onClick={() => setEditingId(null)}
-            >
-              CANCEL
-            </button>
-          </div>
-        </div>
-      ) : (
-        <>
-          
-          <div
-            style={{
-              fontFamily: "Space Grotesk, sans-serif",
-              fontWeight: 700,
-              fontSize: "14px",
-              paddingRight: "24px",
-            }}
-          >
-            {s.name}
-          </div>
-
-          <div
-            style={{
-              fontFamily: "JetBrains Mono, monospace",
-              fontSize: "10px",
-              color: t.mutedText,
-            }}
-          >
-            {s.role || "—"} · {s.team || "—"}
-          </div>
-
-          {!s.isApproved && (
-            <div
-              style={{
-                fontFamily: "JetBrains Mono, monospace",
-                fontSize: "10px",
-                color: t.cyan,
-                marginTop: "4px",
-              }}
-            >
-              pending
             </div>
           )}
 
-          <button
-            className="brutal-btn"
-            style={{
-              marginTop: "8px",
-              background: t.panel,
-              color: t.ink,
-              padding: "4px 10px",
-              fontSize: "10px",
-            }}
-            onClick={() => startEdit(s)}
-          >
-            EDIT
-          </button>
-        </>
+          {/* Roster Cards Grid */}
+          {filteredRoster.length === 0 ? (
+            <div
+              style={{
+                fontFamily: "JetBrains Mono, monospace",
+                fontSize: "13px",
+                opacity: 0.6,
+                padding: "24px",
+                textAlign: "center",
+                border: `2px dashed ${t.border || "#000"}`,
+              }}
+            >
+              No matching students.
+            </div>
+          ) : (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+                gap: "16px",
+              }}
+            >
+              {filteredRoster.map((s) => {
+                const isEditing = editingId === s.id;
+
+                return (
+                  <div
+                    key={s.id}
+                    style={{
+                      background: t.muted || "#f8f9fa",
+                      border: `2px solid ${t.border || "#000"}`,
+                      padding: "14px",
+                      boxShadow: "3px 3px 0 #000",
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "space-between",
+                      position: "relative",
+                      transition: "transform 0.15s ease",
+                    }}
+                  >
+                    {isEditing ? (
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "8px",
+                        }}
+                      >
+                        <input
+                          className="brutal-input"
+                          placeholder="Name"
+                          value={editForm.name}
+                          onChange={(e) =>
+                            setEditForm({ ...editForm, name: e.target.value })
+                          }
+                        />
+                        <input
+                          className="brutal-input"
+                          placeholder="Role"
+                          list="role-options"
+                          value={editForm.role}
+                          onChange={(e) =>
+                            setEditForm({ ...editForm, role: e.target.value })
+                          }
+                        />
+                        <input
+                          className="brutal-input"
+                          placeholder="Team"
+                          list="team-options"
+                          value={editForm.team}
+                          onChange={(e) =>
+                            setEditForm({ ...editForm, team: e.target.value })
+                          }
+                        />
+                        <input
+                          className="brutal-input"
+                          placeholder="RFID UID"
+                          value={editForm.rfidUid}
+                          onChange={(e) =>
+                            setEditForm({
+                              ...editForm,
+                              rfidUid: e.target.value,
+                            })
+                          }
+                        />
+                        {typeof CaptureButton !== "undefined" && (
+                          <CaptureButton
+                            t={t}
+                            onCaptured={(uid) =>
+                              setEditForm((f) => ({ ...f, rfidUid: uid }))
+                            }
+                          />
+                        )}
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: "8px",
+                            marginTop: "6px",
+                          }}
+                        >
+                          <button
+                            className="brutal-btn"
+                            style={{
+                              background: "#3B82F6",
+                              color: "#fff",
+                              padding: "6px 12px",
+                              fontSize: "11px",
+                              fontWeight: 700,
+                            }}
+                            onClick={() => handleSaveEdit(s.id)}
+                          >
+                            SAVE
+                          </button>
+                          <button
+                            className="brutal-btn"
+                            style={{
+                              background: "#6B7280",
+                              color: "#fff",
+                              padding: "6px 12px",
+                              fontSize: "11px",
+                              fontWeight: 700,
+                            }}
+                            onClick={() => setEditingId(null)}
+                          >
+                            CANCEL
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div>
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "flex-start",
+                              marginBottom: "6px",
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontWeight: 700,
+                                fontSize: "15px",
+                                wordBreak: "break-word",
+                              }}
+                            >
+                              {s.name}
+                            </div>
+                            <span
+                              style={{
+                                fontFamily: "JetBrains Mono, monospace",
+                                fontSize: "9px",
+                                fontWeight: 700,
+                                padding: "2px 6px",
+                                background: "#22C55E",
+                                color: "#fff",
+                                border: "1px solid #000",
+                                textTransform: "uppercase",
+                              }}
+                            >
+                              Active
+                            </span>
+                          </div>
+
+                          <div
+                            style={{
+                              fontFamily: "JetBrains Mono, monospace",
+                              fontSize: "11px",
+                              color: t.mutedText || "#666",
+                              marginBottom: "8px",
+                            }}
+                          >
+                            {s.role || "—"} • {s.team || "—"}
+                          </div>
+
+                          <div
+                            style={{
+                              fontFamily: "JetBrains Mono, monospace",
+                              fontSize: "10px",
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: "3px",
+                              marginBottom: "12px",
+                            }}
+                          >
+                            <div>
+                              <span style={{ opacity: 0.6 }}>RFID: </span>
+                              <strong>{s.rfidUid || "Not assigned"}</strong>
+                            </div>
+                            <div>
+                              {s.username ? (
+                                <span
+                                  style={{
+                                    color: "#15803D",
+                                    fontWeight: 700,
+                                  }}
+                                >
+                                  Login Linked ✓ ({s.username})
+                                </span>
+                              ) : (
+                                <span style={{ opacity: 0.6 }}>
+                                  No Login Linked
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: "8px",
+                            borderTop: `1px solid ${t.border || "#000"}`,
+                            paddingTop: "10px",
+                            marginTop: "6px",
+                          }}
+                        >
+                          <button
+                            className="brutal-btn"
+                            style={{
+                              background: "#3B82F6",
+                              color: "#fff",
+                              padding: "5px 10px",
+                              fontSize: "11px",
+                              fontWeight: 700,
+                              flex: 1,
+                            }}
+                            onClick={() => startEdit(s)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className="brutal-btn"
+                            style={{
+                              background: "#EF4444",
+                              color: "#fff",
+                              padding: "5px 10px",
+                              fontSize: "11px",
+                              fontWeight: 700,
+                              flex: 1,
+                            }}
+                            onClick={() => handleDeleteStudent(s.id, s.name)}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       )}
-    </div>
-  ))}
-</div>
-      </div>
+
+      {/* ================= TAB 2: PENDING APPROVALS ================= */}
+      {activeTab === "pending" && (
+        <div>
+          {pending.length === 0 ? (
+            <div
+              style={{
+                fontFamily: "JetBrains Mono, monospace",
+                fontSize: "13px",
+                opacity: 0.7,
+                padding: "32px",
+                textAlign: "center",
+                border: `2px dashed ${t.border || "#000"}`,
+                background: t.panel || "#fff",
+              }}
+            >
+              ✔ Everything is approved.
+            </div>
+          ) : (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
+                gap: "18px",
+              }}
+            >
+              {pending.map((s) => {
+                const searchVal = pendingSearchTerms[s.id] || "";
+                const suggestions = getPendingRosterSuggestions(s.id);
+                const selectedStudentId = approveForm[s.id]?.studentId;
+                const selectedStudentName = approveForm[s.id]?.selectedName;
+
+                return (
+                  <div
+                    key={s.id}
+                    style={{
+                      border: `2px solid ${t.border || "#000"}`,
+                      background: t.panel || "#fff",
+                      padding: "16px",
+                      boxShadow: "4px 4px 0 #000",
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "space-between",
+                    }}
+                  >
+                    <div>
+                      <div
+                        style={{
+                          fontWeight: 700,
+                          fontSize: "16px",
+                          marginBottom: "4px",
+                        }}
+                      >
+                        {s.name}
+                      </div>
+                      <div
+                        style={{
+                          fontFamily: "JetBrains Mono, monospace",
+                          fontSize: "11px",
+                          opacity: 0.7,
+                          marginBottom: "4px",
+                        }}
+                      >
+                        {s.username || "No Email"}
+                      </div>
+                      <div
+                        style={{
+                          fontFamily: "JetBrains Mono, monospace",
+                          fontSize: "10px",
+                          opacity: 0.5,
+                          marginBottom: "14px",
+                        }}
+                      >
+                        Requested:{" "}
+                        {s.createdAt
+                          ? new Date(s.createdAt).toLocaleDateString()
+                          : "Recently"}
+                      </div>
+
+                      {/* Command Palette / Roster Search Linker */}
+                      <div
+                        style={{
+                          border: `2px solid ${t.border || "#000"}`,
+                          padding: "10px",
+                          background: t.muted || "#f8f9fa",
+                          marginBottom: "14px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontFamily: "JetBrains Mono, monospace",
+                            fontSize: "10px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            marginBottom: "6px",
+                          }}
+                        >
+                          Link to Active Roster Member:
+                        </div>
+
+                        {selectedStudentId ? (
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              background: t.cyan || "#00E5FF",
+                              color: "#000",
+                              padding: "6px 10px",
+                              border: "1px solid #000",
+                              fontWeight: 700,
+                              fontSize: "12px",
+                            }}
+                          >
+                            <span>Selected: {selectedStudentName}</span>
+                            <button
+                              onClick={() =>
+                                setApproveForm((prev) => ({
+                                  ...prev,
+                                  [s.id]: null,
+                                }))
+                              }
+                              style={{
+                                background: "transparent",
+                                border: "none",
+                                cursor: "pointer",
+                                fontWeight: 700,
+                                fontSize: "14px",
+                              }}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ) : (
+                          <div>
+                            <input
+                              className="brutal-input"
+                              placeholder="Search roster (e.g. Ben)..."
+                              value={searchVal}
+                              onChange={(e) =>
+                                setPendingSearchTerms((prev) => ({
+                                  ...prev,
+                                  [s.id]: e.target.value,
+                                }))
+                              }
+                              style={{ width: "100%", marginBottom: "6px" }}
+                            />
+
+                            {/* Suggestions Palette */}
+                            <div
+                              style={{
+                                maxHeight: "140px",
+                                overflowY: "auto",
+                                border: `1px solid ${t.border || "#000"}`,
+                                background: "#fff",
+                              }}
+                            >
+                              {suggestions.length === 0 ? (
+                                <div
+                                  style={{
+                                    padding: "8px",
+                                    fontSize: "11px",
+                                    opacity: 0.5,
+                                    fontFamily: "JetBrains Mono, monospace",
+                                  }}
+                                >
+                                  No unlinked roster members match
+                                </div>
+                              ) : (
+                                suggestions.map((st) => (
+                                  <div
+                                    key={st.id}
+                                    onClick={() =>
+                                      setApproveForm((prev) => ({
+                                        ...prev,
+                                        [s.id]: {
+                                          studentId: st.id,
+                                          selectedName: st.name,
+                                        },
+                                      }))
+                                    }
+                                    style={{
+                                      padding: "6px 8px",
+                                      fontSize: "12px",
+                                      cursor: "pointer",
+                                      borderBottom: "1px solid #eee",
+                                      display: "flex",
+                                      justifyContent: "space-between",
+                                    }}
+                                  >
+                                    <span style={{ fontWeight: 700 }}>
+                                      {st.name}
+                                    </span>
+                                    <span
+                                      style={{
+                                        fontFamily:
+                                          "JetBrains Mono, monospace",
+                                        fontSize: "10px",
+                                        opacity: 0.6,
+                                      }}
+                                    >
+                                      {st.role || "Member"} • {st.team || "-"}
+                                    </span>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div style={{ display: "flex", gap: "10px" }}>
+                      <button
+                        className="brutal-btn"
+                        style={{
+                          background: "#22C55E",
+                          color: "#fff",
+                          padding: "8px 14px",
+                          fontWeight: 700,
+                          fontSize: "12px",
+                          flex: 1,
+                        }}
+                        onClick={() => handleApprove(s.id)}
+                      >
+                        Approve
+                      </button>
+                      <button
+                        className="brutal-btn"
+                        style={{
+                          background: "#EF4444",
+                          color: "#fff",
+                          padding: "8px 14px",
+                          fontWeight: 700,
+                          fontSize: "12px",
+                          flex: 1,
+                        }}
+                        onClick={() => handleReject(s.id, s.name)}
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ================= TAB 3: ARCHIVED ================= */}
+      {activeTab === "archived" && (
+        <div>
+          <div style={{ marginBottom: "16px" }}>
+            <input
+              className="brutal-input"
+              placeholder="search archived members..."
+              value={archivedSearch}
+              onChange={(e) => setArchivedSearch(e.target.value)}
+              style={{ width: "100%", maxWidth: "400px" }}
+            />
+          </div>
+
+          {filteredArchived.length === 0 ? (
+            <div
+              style={{
+                fontFamily: "JetBrains Mono, monospace",
+                fontSize: "13px",
+                opacity: 0.6,
+                padding: "32px",
+                textAlign: "center",
+                border: `2px dashed ${t.border || "#000"}`,
+              }}
+            >
+              No archived members.
+            </div>
+          ) : (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+                gap: "16px",
+              }}
+            >
+              {filteredArchived.map((s) => (
+                <div
+                  key={s.id}
+                  style={{
+                    background: t.muted || "#f8f9fa",
+                    border: `2px solid ${t.border || "#000"}`,
+                    padding: "14px",
+                    boxShadow: "3px 3px 0 #000",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "flex-start",
+                        marginBottom: "6px",
+                      }}
+                    >
+                      <div style={{ fontWeight: 700, fontSize: "15px" }}>
+                        {s.name}
+                      </div>
+                      <span
+                        style={{
+                          fontFamily: "JetBrains Mono, monospace",
+                          fontSize: "9px",
+                          fontWeight: 700,
+                          padding: "2px 6px",
+                          background: "#6B7280",
+                          color: "#fff",
+                          border: "1px solid #000",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        Archived
+                      </span>
+                    </div>
+
+                    <div
+                      style={{
+                        fontFamily: "JetBrains Mono, monospace",
+                        fontSize: "11px",
+                        color: t.mutedText || "#666",
+                        marginBottom: "12px",
+                      }}
+                    >
+                      {s.role || "—"} • {s.team || "—"}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "8px",
+                      borderTop: `1px solid ${t.border || "#000"}`,
+                      paddingTop: "10px",
+                    }}
+                  >
+                    <button
+                      className="brutal-btn"
+                      style={{
+                        background: "#22C55E",
+                        color: "#fff",
+                        padding: "5px 10px",
+                        fontSize: "11px",
+                        fontWeight: 700,
+                        flex: 1,
+                      }}
+                      onClick={() => handleRestoreArchived(s.id)}
+                    >
+                      Restore
+                    </button>
+                    <button
+                      className="brutal-btn"
+                      style={{
+                        background: "#EF4444",
+                        color: "#fff",
+                        padding: "5px 10px",
+                        fontSize: "11px",
+                        fontWeight: 700,
+                        flex: 1,
+                      }}
+                      onClick={() => handleDeleteArchived(s.id, s.name)}
+                    >
+                      Delete Permanently
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1682,55 +2232,55 @@ function DeviceTab({ t }) {
     </div>
   );
 }
-  function CaptureButton({ t, onCaptured }) {
-    const [capturing, setCapturing] = useState(false);
-    const [msg, setMsg] = useState("");
+function CaptureButton({ t, onCaptured }) {
+  const [capturing, setCapturing] = useState(false);
+  const [msg, setMsg] = useState("");
 
-    const handleClick = async () => {
-      setCapturing(true);
-      setMsg("waiting for tap...");
-      try {
-        const uid = await adminApi.captureCard();
-        onCaptured(uid);
-        setMsg("captured!");
-      } catch (err) {
-        setMsg(err.message);
-      } finally {
-        setCapturing(false);
-        setTimeout(() => setMsg(""), 2000);
-      }
-    };
+  const handleClick = async () => {
+    setCapturing(true);
+    setMsg("waiting for tap...");
+    try {
+      const uid = await adminApi.captureCard();
+      onCaptured(uid);
+      setMsg("captured!");
+    } catch (err) {
+      setMsg(err.message);
+    } finally {
+      setCapturing(false);
+      setTimeout(() => setMsg(""), 2000);
+    }
+  };
 
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-        <button
-          type="button"
-          className="brutal-btn icon-btn"
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+      <button
+        type="button"
+        className="brutal-btn icon-btn"
+        style={{
+          background: t.cyan,
+          color: "#0B0F19",
+          fontSize: "11px",
+        }}
+        onClick={handleClick}
+        disabled={capturing}
+      >
+        {capturing ? "..." : "📇"}
+      </button>
+
+      {msg && (
+        <span
           style={{
-            background: t.cyan,
-            color: "#0B0F19",
-            fontSize: "11px",
+            fontFamily: "JetBrains Mono, monospace",
+            fontSize: "10px",
+            color: t.mutedText,
           }}
-          onClick={handleClick}
-          disabled={capturing}
         >
-          {capturing ? "..." : "📇"}
-        </button>
-
-        {msg && (
-          <span
-            style={{
-              fontFamily: "JetBrains Mono, monospace",
-              fontSize: "10px",
-              color: t.mutedText,
-            }}
-          >
-            {msg}
-          </span>
-        )}
-      </div>
-    );
-  }
+          {msg}
+        </span>
+      )}
+    </div>
+  );
+}
 function ReportsTab({ t }) {
   const [sessions, setSessions] = useState([]);
   const [studentCount, setStudentCount] = useState(0);

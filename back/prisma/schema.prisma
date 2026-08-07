@@ -1,5 +1,3 @@
-// backend/prisma/schema.prisma
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -22,69 +20,110 @@ enum MeetingStatus {
 }
 
 model AdminUser {
-  id           String    @id @default(uuid())
-  username     String    @unique
+  id           String   @id @default(uuid())
+  username     String   @unique
   passwordHash String
-  createdAt    DateTime  @default(now())
-  sessions     Session[]
-  meetings     Meeting[]
+  createdAt    DateTime @default(now())
+
+  sessions Session[]
+  meetings Meeting[]
 }
 
 model Student {
-  id           String          @id @default(uuid())
+  id           String   @id @default(uuid())
+
   name         String
-  rfidUid      String?         @unique  // nullable now - may not be assigned yet at registration time
-  username     String?         @unique
-  passwordHash String?
-  isApproved   Boolean         @default(false)
   role         String?
   team         String?
-  isActive     Boolean         @default(true)
-  logs         AttendanceLog[]
+
+  rfidUid      String?  @unique
+
+  // Login credentials (assigned after approval)
+  username     String?  @unique
+  passwordHash String?
+
+  isApproved   Boolean  @default(false)
+  isActive     Boolean  @default(true)
+
+  logs          AttendanceLog[]
+
+  createdAt     DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model PendingRegistration {
+  id           String   @id @default(uuid())
+
+  name         String
+  username     String   @unique
+  passwordHash String
+
+  createdAt    DateTime @default(now())
 }
 
 model Session {
-  id            String         @id @default(uuid())
-  title         String
-  scheduledTime DateTime?
-  venue         String?
-  status        SessionStatus  @default(SCHEDULED)
-  agenda        String?
-  notificationChannel String?
-  notificationTarget  String?
-  confirmedAt   DateTime?
-  minutes       String?
-  createdBy     AdminUser      @relation(fields: [createdById], references: [id])
-  createdById   String
-  logs          AttendanceLog[]
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id                   String         @id @default(uuid())
+
+  title                String
+  scheduledTime        DateTime?
+  venue                String?
+
+  status               SessionStatus  @default(SCHEDULED)
+
+  agenda               String?
+
+  notificationChannel  String?
+  notificationTarget   String?
+
+  confirmedAt          DateTime?
+
+  minutes              String?
+
+  createdBy            AdminUser      @relation(fields: [createdById], references: [id])
+  createdById          String
+
+  logs                 AttendanceLog[]
+
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
 }
 
 model Meeting {
-  id                  String        @id @default(uuid())
-  title               String
-  scheduledAt         DateTime
-  venue               String
-  agenda              String?
-  status              MeetingStatus @default(DRAFT)
-  notificationChannel String?
-  notificationTarget  String?
-  confirmedAt         DateTime?
-  createdBy          AdminUser     @relation(fields: [createdById], references: [id])
-  createdById        String
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @updatedAt
+  id                   String         @id @default(uuid())
+
+  title                String
+  scheduledAt          DateTime
+  venue                String
+
+  agenda               String?
+
+  status               MeetingStatus  @default(DRAFT)
+
+  notificationChannel  String?
+  notificationTarget   String?
+
+  confirmedAt          DateTime?
+
+  createdBy            AdminUser      @relation(fields: [createdById], references: [id])
+  createdById          String
+
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
 }
 
 model AttendanceLog {
   id          String    @id @default(uuid())
+
   student     Student   @relation(fields: [studentId], references: [id])
   studentId   String
+
   session     Session   @relation(fields: [sessionId], references: [id])
   sessionId   String
+
   scannedAt   DateTime  @default(now())
+
   isManual    Boolean   @default(false)
+
   modifiedBy  String?
   modifiedAt  DateTime?
 

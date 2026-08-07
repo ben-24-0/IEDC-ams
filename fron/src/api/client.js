@@ -56,22 +56,39 @@ export const adminApi = {
       method: "PATCH",
       body: JSON.stringify(session),
     }),
-    updateStudent: (id, data) =>
-  request(`/students/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  updateStudent: (id, data) =>
+    request(`/students/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   startSession: (id) => request(`/sessions/${id}/start`, { method: "PATCH" }),
   closeSession: (id) => request(`/sessions/${id}/close`, { method: "PATCH" }),
   deleteSession: (id) => request(`/sessions/${id}`, { method: "DELETE" }),
+  getArchivedStudents: () => request("/students/archived"),
+
+restoreStudent: (id) =>
+  request(`/students/${id}/restore`, {
+    method: "PATCH",
+  }),
+
+deleteArchivedStudent: (id) =>
+  request(`/students/archived/${id}`, {
+    method: "DELETE",
+  }),
+
+// optional alias if old code still references it
+getArchived: () => request("/students/archived"),
   getStudents: () => request("/students"),
   getPendingStudents: () => request("/students/pending"),
-  approveStudent: (id, data) =>
-    request(`/students/${id}/approve`, {
+  approveStudent: (id, studentId) =>
+    request(`/students/pending/${id}/approve`, {
       method: "PATCH",
-      body: JSON.stringify(data),
+      body: JSON.stringify({ studentId }),
     }),
   createStudent: (student) =>
     request("/students", { method: "POST", body: JSON.stringify(student) }),
   deleteStudent: (id) => request(`/students/${id}`, { method: "DELETE" }),
-  rejectStudent: (id) => request(`/students/${id}`, { method: "DELETE" }),
+  rejectStudent: (id) =>
+    request(`/students/pending/${id}`, {
+      method: "DELETE",
+    }),
   captureCard: async ({ timeoutMs = 15000, intervalMs = 1500 } = {}) => {
     await request("/device/last-enroll/clear", { method: "POST" });
     const start = Date.now();
@@ -119,6 +136,7 @@ export const studentApi = {
       method: "POST",
       body: JSON.stringify({ username, password }),
     }),
+    
   getStudents: () => request("/students", {}, "studentToken"),
   getSessions: () => request("/sessions", {}, "studentToken"),
   getSession: (id) => request(`/sessions/${id}`, {}, "studentToken"),
