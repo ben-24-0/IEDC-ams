@@ -46,7 +46,7 @@ const ROLE_OPTIONS = ["LEAD", "MEMBER"];
 
 export default function AdminDashboard({ onLogout }) {
   const [tab, setTab] = useState("Sessions");
-  const [mode, setMode] = useState("dark");
+  const [mode, setMode] = useState("light");
   const t = THEMES[mode];
 
   return (

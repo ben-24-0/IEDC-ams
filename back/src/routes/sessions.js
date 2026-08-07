@@ -190,6 +190,26 @@ router.patch("/:id/confirm", requireAuth, async (req, res) => {
   res.json(serializeSession(session));
 });
 
+// student-facing - documentation team members can upload/edit minutes
+router.patch("/:id/minutes", requireAuth, async (req, res) => {
+  const studentId = req.admin.studentId; // student tokens carry studentId, not adminId
+  if (!studentId) return res.status(403).json({ error: "student login required" });
+
+  const student = await prisma.student.findUnique({ where: { id: studentId } });
+  if (!student || student.team !== "DOCUMENTATION") {
+    return res.status(403).json({ error: "only documentation team members can edit minutes" });
+  }
+
+  const existing = await prisma.session.findUnique({ where: { id: req.params.id } });
+  if (!existing) return res.status(404).json({ error: "not found" });
+
+  const session = await prisma.session.update({
+    where: { id: req.params.id },
+    data: { minutes: req.body.minutes ?? "" },
+  });
+  res.json(serializeSession(session));
+});
+
 // start session (device button press hits this via a small esp32-triggered call, or admin manually)
 router.patch("/:id/start", requireAuth, async (req, res) => {
   const session = await prisma.session.update({

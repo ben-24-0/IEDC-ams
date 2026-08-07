@@ -1,8 +1,23 @@
 import { useState, useMemo, useEffect } from "react";
 import { studentApi } from "../api/client";
 
-const TEAMS = ["All", "Tech", "Design", "Events", "Outreach"];
-const ROLES = ["All", "Lead", "Core", "Volunteer"];
+const TEAMS = [
+  "ALL",
+  "IEDC",
+  "CREATIVE",
+  "FINANCE",
+  "MARKETING",
+  "PODCAST",
+  "TECH",
+  "PROTOTYPE",
+  "COMMUNITY",
+  "MEDIA",
+  "COORDINATORS",
+  "OPERATION",
+  "DOCUMENTATION",
+  "WOMEN INNOVATION",
+];
+const ROLES = ["All", "Lead", "Member", "Nodal"];
 
 const THEMES = {
   light: {
@@ -487,6 +502,66 @@ function CalendarView({
   );
 }
 
+function MinutesEditor({ t, session, canEdit }) {
+  const [minutes, setMinutes] = useState(session.minutes || "");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const handleFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!file.name.endsWith(".txt")) {
+      alert("only .txt files supported right now");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => setMinutes(ev.target.result);
+    reader.readAsText(file);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setMsg("");
+    try {
+      await studentApi.uploadMinutes(session.id, minutes);
+      setMsg("saved!");
+    } catch (err) {
+      setMsg(err.message);
+    } finally {
+      setSaving(false);
+      setTimeout(() => setMsg(""), 2000);
+    }
+  };
+
+  if (!canEdit) {
+    return (
+      <div style={{ fontSize: "13px", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+        {session.minutes || "not recorded yet"}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <textarea
+        className="brutal-input"
+        style={{ width: "100%", minHeight: "120px", marginBottom: "8px", fontFamily: "JetBrains Mono, monospace", fontSize: "13px" }}
+        value={minutes}
+        onChange={(e) => setMinutes(e.target.value)}
+        placeholder="paste or type meeting minutes..."
+      />
+      <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+        <input type="file" accept=".txt" onChange={handleFile} style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "11px" }} />
+        <button className="brutal-btn" style={{ background: t.accentSolid, color: "#fff", padding: "7px 14px", fontSize: "12px" }}
+          onClick={handleSave} disabled={saving}>
+          {saving ? "..." : "SAVE MINUTES"}
+        </button>
+        {msg && <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "11px", color: t.cyan }}>{msg}</span>}
+      </div>
+    </div>
+  );
+}
+
 export default function StudentDashboard({ onLogout }) {
   const [mode, setMode] = useState("light");
   const t = { ...THEMES[mode], mode };
@@ -505,6 +580,8 @@ export default function StudentDashboard({ onLogout }) {
   const [statusFilter, setStatusFilter] = useState("All");
   const [teamFilter, setTeamFilter] = useState("All");
   const [roleFilter, setRoleFilter] = useState("All");
+//doc team
+const isDocTeam = localStorage.getItem("studentTeam") === "DOCUMENTATION";
 
   useEffect(() => {
     const fetchData = () => {
@@ -558,35 +635,61 @@ export default function StudentDashboard({ onLogout }) {
 
   const session = sessions.find((s) => s.id === activeId);
 
-  const rows = useMemo(() => {
-    if (!session || !roster.length) return [];
-    return roster
-      .map((m) => {
-        const hit = session.present?.find((p) => p.id === m.id);
-        return {
-          ...m,
-          present: !!hit,
-          time: hit?.time,
-          rosterIndex: roster.indexOf(m),
-        };
-      })
-      .filter((m) => {
-        if (statusFilter === "Present" && !m.present) return false;
-        if (statusFilter === "Absent" && m.present) return false;
-        if (teamFilter !== "All" && m.team !== teamFilter) return false;
-        if (roleFilter !== "All" && m.role !== roleFilter) return false;
-        if (search && !m.name.toLowerCase().includes(search.toLowerCase()))
-          return false;
-        return true;
-      })
-      .sort((a, b) => {
-        if (a.present !== b.present) return a.present ? -1 : 1;
-        if (a.present && b.present) {
-          return new Date(a.time || 0) - new Date(b.time || 0);
-        }
-        return a.rosterIndex - b.rosterIndex;
-      });
-  }, [roster, session, statusFilter, teamFilter, roleFilter, search]);
+const rows = useMemo(() => {
+  if (!session || !roster.length) return [];
+  
+  return roster
+    .map((m, index) => {
+      const hit = session.present?.find((p) => p.id === m.id);
+      return {
+        ...m,
+        present: !!hit,
+        time: hit?.time,
+        rosterIndex: index, // Fixed: O(1) assignment instead of O(N) indexOf
+      };
+    })
+    .filter((m) => {
+      if (statusFilter === "Present" && !m.present) return false;
+      if (statusFilter === "Absent" && m.present) return false;
+
+      // Fixed: Case-insensitive comparison for Teams
+      if (
+        teamFilter?.toUpperCase() !== "ALL" && 
+        m.team?.toUpperCase() !== teamFilter?.toUpperCase()
+      ) {
+        return false;
+      }
+
+      // Fixed: Case-insensitive comparison for Roles
+      if (
+        roleFilter?.toUpperCase() !== "ALL" && 
+        m.role?.toUpperCase() !== roleFilter?.toUpperCase()
+      ) {
+        return false;
+      }
+
+      if (search && !m.name?.toLowerCase().includes(search.toLowerCase())) {
+        return false;
+      }
+      
+      return true;
+    })
+    .sort((a, b) => {
+      // 1. Sort by presence (Present at the top)
+      if (a.present !== b.present) return a.present ? -1 : 1;
+      
+      // 2. If both are present, sort by time (Earliest first)
+      if (a.present && b.present) {
+        const timeA = a.time ? new Date(a.time).getTime() : 0;
+        const timeB = b.time ? new Date(b.time).getTime() : 0;
+        return timeA - timeB; 
+      }
+      
+      // 3. Fallback: Sort by original roster order
+      return a.rosterIndex - b.rosterIndex;
+    });
+}, [roster, session, statusFilter, teamFilter, roleFilter, search]);
+
 
   const formatAttendanceTime = (time) => {
     if (!time) return "waiting for scan";
@@ -1004,225 +1107,93 @@ export default function StudentDashboard({ onLogout }) {
         )}
       </div>
 
-      {session ? (
-        <div
-          className="student-shell"
-          style={{
-            border: `4px solid ${t.border}`,
-            boxShadow: `8px 8px 0 ${t.border}`,
-            background: t.panel,
-            padding: "24px",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              flexWrap: "wrap",
-              gap: "12px",
-              marginBottom: "20px",
-            }}
-          >
-            <div>
-              <h1
-                style={{
-                  fontFamily: "Space Grotesk, sans-serif",
-                  fontSize: "26px",
-                  margin: 0,
-                }}
-              >
-                {session.title}
-              </h1>
-              <div
-                style={{
-                  fontFamily: "JetBrains Mono, monospace",
-                  fontSize: "13px",
-                  color: t.mutedText,
-                  marginTop: "4px",
-                }}
-              >
-                {session.time ||
-                  new Date(
-                    session.date || session.createdAt,
-                  ).toLocaleDateString()}{" "}
-                · {(session.present || []).length}/{roster.length} present
-              </div>
-            </div>
-            <div
-              style={{
-                background: statusColor,
-                color: "#fff",
-                border: `3px solid ${t.border}`,
-                padding: "6px 16px",
-                fontFamily: "Space Grotesk, sans-serif",
-                fontWeight: 700,
-                fontSize: "13px",
-                transform: "rotate(-2deg)",
-              }}
-            >
-              {session.status || "ACTIVE"}
-            </div>
-          </div>
-
-          <div className="student-filter-row">
-            <input
-              placeholder="search name..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              style={{
-                fontFamily: "JetBrains Mono, monospace",
-                fontSize: "12px",
-                border: `2px solid ${t.border}`,
-                padding: "7px 10px",
-                minWidth: "160px",
-                background: t.panel,
-                color: t.ink,
-              }}
-            />
-            {["All", "Present", "Absent"].map((v) => (
-              <button
-                key={v}
-                style={chipStyle(statusFilter === v)}
-                onClick={() => setStatusFilter(v)}
-              >
-                {v}
-              </button>
-            ))}
-            <select
-              value={teamFilter}
-              onChange={(e) => setTeamFilter(e.target.value)}
-              style={chipStyle(teamFilter !== "All")}
-            >
-              {TEAMS.map((tm) => (
-                <option key={tm} value={tm}>
-                  {tm === "All" ? "Team: All" : tm}
-                </option>
-              ))}
-            </select>
-            <select
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value)}
-              style={chipStyle(roleFilter !== "All")}
-            >
-              {ROLES.map((r) => (
-                <option key={r} value={r}>
-                  {r === "All" ? "Role: All" : r}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="student-card-grid">
-            {rows.map((m) => (
-              <div
-                key={m.id}
-                className="student-card"
-                style={{
-                  boxShadow: m.present
-                    ? `5px 5px 0 ${mode === "dark" ? "#16a34a" : "#22c55e"}`
-                    : "none",
-                  opacity: m.present ? 1 : 0.55,
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    gap: "10px",
-                    marginBottom: "6px",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontFamily: "JetBrains Mono, monospace",
-                      fontSize: "11px",
-                      color: m.present
-                        ? mode === "dark"
-                          ? "#86efac"
-                          : "#166534"
-                        : t.mutedText,
-                    }}
-                  >
-                    {formatAttendanceTime(m.time)}
-                  </div>
-                  {m.present && (
-                    <div
-                      style={{
-                        fontFamily: "JetBrains Mono, monospace",
-                        fontSize: "10px",
-                        fontWeight: 700,
-                        color: mode === "dark" ? "#86efac" : "#166534",
-                      }}
-                    >
-                      PRESENT
-                    </div>
-                  )}
-                </div>
-                <div
-                  style={{
-                    fontFamily: "Space Grotesk, sans-serif",
-                    fontWeight: 700,
-                    fontSize: "17px",
-                    marginBottom: "6px",
-                  }}
-                >
-                  {m.name}
-                </div>
-                <div style={{ display: "flex", gap: "6px" }}>
-                  <span
-                    style={{
-                      fontFamily: "JetBrains Mono, monospace",
-                      fontSize: "10px",
-                      background: t.muted,
-                      border: `2px solid ${t.border}`,
-                      padding: "2px 7px",
-                    }}
-                  >
-                    {m.role}
-                  </span>
-                  <span
-                    style={{
-                      fontFamily: "JetBrains Mono, monospace",
-                      fontSize: "10px",
-                      background: t.muted,
-                      border: `2px solid ${t.border}`,
-                      padding: "2px 7px",
-                    }}
-                  >
-                    {m.team}
-                  </span>
-                </div>
-              </div>
-            ))}
-            {rows.length === 0 && (
-              <div
-                style={{
-                  fontFamily: "JetBrains Mono, monospace",
-                  fontSize: "13px",
-                  color: t.mutedText,
-                  gridColumn: "1/-1",
-                }}
-              >
-                no matches for current filters
-              </div>
-            )}
+{session ? (
+  <>
+    {/* PART 1 - session info + collapsible agenda/minutes */}
+    <div className="student-shell" style={{ border: `4px solid ${t.border}`, boxShadow: `8px 8px 0 ${t.border}`, background: t.panel, padding: "24px", marginBottom: "16px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px", marginBottom: "12px" }}>
+        <div>
+          <h1 style={{ fontFamily: "Space Grotesk, sans-serif", fontSize: "26px", margin: 0 }}>{session.title}</h1>
+          <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "13px", color: t.mutedText, marginTop: "4px" }}>
+            {session.scheduledTime ? new Date(session.scheduledTime).toLocaleString() : "TBA"} · {session.venue || "venue TBA"}
           </div>
         </div>
-      ) : (
-        <div
-          style={{
-            border: `3px dashed ${t.border}`,
-            padding: "40px",
-            textAlign: "center",
-            fontFamily: "JetBrains Mono, monospace",
-            color: t.mutedText,
-          }}
-        >
-          no active sessions found
+        <div style={{ background: statusColor, color: "#fff", border: `3px solid ${t.border}`, padding: "6px 16px", fontFamily: "Space Grotesk, sans-serif", fontWeight: 700, fontSize: "13px", transform: "rotate(-2deg)" }}>
+          {session.status || "ACTIVE"}
         </div>
-      )}
+      </div>
+
+      <details open>
+        <summary style={{ fontFamily: "Space Grotesk, sans-serif", fontSize: "14px", cursor: "pointer", color: t.mutedText, marginBottom: "10px" }}>
+          AGENDA &amp; MINUTES
+        </summary>
+        <div style={{ marginTop: "10px" }}>
+          <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "10px", color: t.mutedText, marginBottom: "4px" }}>AGENDA</div>
+          <div style={{ fontSize: "13px", lineHeight: 1.5, whiteSpace: "pre-wrap", marginBottom: "16px" }}>
+            {session.agenda || "not set"}
+          </div>
+          <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "10px", color: t.mutedText, marginBottom: "4px" }}>MINUTES</div>
+          <MinutesEditor t={t} session={session} canEdit={isDocTeam} />
+        </div>
+      </details>
+    </div>
+
+    {/* PART 2 - attendance, separate card so agenda collapsing doesn't affect it */}
+    <div className="student-shell" style={{ border: `4px solid ${t.border}`, boxShadow: `8px 8px 0 ${t.border}`, background: t.panel, padding: "24px" }}>
+      <h2 style={{ fontFamily: "Space Grotesk, sans-serif", fontSize: "18px", marginBottom: "12px" }}>
+        ATTENDANCE <span style={{ color: t.mutedText, fontSize: "14px" }}>({(session.present || []).length}/{roster.length})</span>
+      </h2>
+
+      <div className="student-filter-row">
+        <input
+          placeholder="search name..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "12px", border: `2px solid ${t.border}`, padding: "7px 10px", minWidth: "160px", background: t.panel, color: t.ink }}
+        />
+        {["All", "Present", "Absent"].map((v) => (
+          <button key={v} style={chipStyle(statusFilter === v)} onClick={() => setStatusFilter(v)}>{v}</button>
+        ))}
+        <select value={teamFilter} onChange={(e) => setTeamFilter(e.target.value)} style={chipStyle(teamFilter !== "All")}>
+          {TEAMS.map((tm) => <option key={tm} value={tm}>{tm === "All" ? "Team: All" : tm}</option>)}
+        </select>
+        <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} style={chipStyle(roleFilter !== "All")}>
+          {ROLES.map((r) => <option key={r} value={r}>{r === "All" ? "Role: All" : r}</option>)}
+        </select>
+      </div>
+
+      <div className="student-card-grid">
+        {rows.map((m) => (
+          <div key={m.id} className="student-card" style={{
+            boxShadow: m.present ? `5px 5px 0 ${mode === "dark" ? "#16a34a" : "#22c55e"}` : "none",
+            opacity: m.present ? 1 : 0.55,
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
+              <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "11px", color: m.present ? (mode === "dark" ? "#86efac" : "#166534") : t.mutedText }}>
+                {formatAttendanceTime(m.time)}
+              </div>
+              {m.present && (
+                <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "10px", fontWeight: 700, color: mode === "dark" ? "#86efac" : "#166534" }}>PRESENT</div>
+              )}
+            </div>
+            <div style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 700, fontSize: "17px", marginBottom: "6px" }}>{m.name}</div>
+            <div style={{ display: "flex", gap: "6px" }}>
+              <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "10px", background: t.muted, border: `2px solid ${t.border}`, padding: "2px 7px" }}>{m.role}</span>
+              <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "10px", background: t.muted, border: `2px solid ${t.border}`, padding: "2px 7px" }}>{m.team}</span>
+            </div>
+          </div>
+        ))}
+        {rows.length === 0 && (
+          <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "13px", color: t.mutedText, gridColumn: "1/-1" }}>no matches for current filters</div>
+        )}
+      </div>
+    </div>
+  </>
+) : (
+  <div style={{ border: `3px dashed ${t.border}`, padding: "40px", textAlign: "center", fontFamily: "JetBrains Mono, monospace", color: t.mutedText }}>
+    no active sessions found
+  </div>
+)}
     </div>
   );
 }

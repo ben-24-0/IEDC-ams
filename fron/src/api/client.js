@@ -140,4 +140,6 @@ export const studentApi = {
   getStudents: () => request("/students", {}, "studentToken"),
   getSessions: () => request("/sessions", {}, "studentToken"),
   getSession: (id) => request(`/sessions/${id}`, {}, "studentToken"),
+  uploadMinutes: (sessionId, minutes) =>
+  request(`/sessions/${sessionId}/minutes`, { method: "PATCH", body: JSON.stringify({ minutes }) }, "studentToken"),
 };
