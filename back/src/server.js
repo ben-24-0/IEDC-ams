@@ -4,7 +4,28 @@ const express = require("express");
 const cors = require("cors");
 
 const app = express();
+// Define the URLs that are allowed to talk to your backend
+const allowedOrigins = [
+  "http://localhost:5173", // Your local Vite environment
+  "https://your-project-name.vercel.app" ,
+  "https://iedc-ams-bens-projects-47cd00d7.vercel.app",
+  "https://iedc-ams.vercel.app"
 
+];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like Postman, mobile apps, or same-origin requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true, // Important if you ever decide to use cookies/sessions
+}));
 app.use(cors());
 
 app.use(express.json());
