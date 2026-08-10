@@ -422,6 +422,7 @@ function buildWhatsappLink(session, recipient) {
 
 function SessionsTab({ t }) {
   const [sessions, setSessions] = useState([]);
+  const [students, setStudents] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [detail, setDetail] = useState(null);
   const [editingSessionId, setEditingSessionId] = useState(null);
@@ -439,9 +440,14 @@ function SessionsTab({ t }) {
 
   const loadSessions = async () => {
     try {
-      const data = await adminApi.getSessions();
-      setSessions(data);
-      if (!activeId && data.length) setActiveId(data[0].id);
+      const [sessionData, studentData] = await Promise.all([
+        adminApi.getSessions(),
+        adminApi.getStudents(),
+      ]);
+
+      setSessions(sessionData);
+      setStudents(studentData);
+      if (!activeId && sessionData.length) setActiveId(sessionData[0].id);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -490,6 +496,22 @@ function SessionsTab({ t }) {
   }, [activeId]);
 
   const session = detail;
+  const attendanceRows = session
+    ? students.map((student, index) => {
+        const hit = session.logs?.find((log) => log.student.id === student.id);
+
+        return {
+          ...student,
+          present: !!hit,
+          time: hit?.scannedAt,
+          isManual: hit?.isManual,
+          rosterIndex: index,
+        };
+      })
+    : [];
+
+  const presentCount = session?.logs?.length || 0;
+  const totalCount = students.length || 0;
 
   const getMissingSessionFields = () => {
     const missing = [];
@@ -920,6 +942,124 @@ function SessionsTab({ t }) {
             {buildSessionMessage(session)}
           </div>
 
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "8px",
+              alignItems: "center",
+              marginBottom: "14px",
+            }}
+          >
+            <div
+              style={{
+                fontFamily: "JetBrains Mono, monospace",
+                fontSize: "11px",
+                border: `2px solid ${t.border}`,
+                background: t.muted,
+                padding: "5px 8px",
+              }}
+            >
+              attendance: {presentCount}/{totalCount}
+            </div>
+            <div
+              style={{
+                fontFamily: "JetBrains Mono, monospace",
+                fontSize: "11px",
+                border: `2px solid ${t.border}`,
+                background: t.muted,
+                padding: "5px 8px",
+              }}
+            >
+              present: {presentCount}
+            </div>
+            <div
+              style={{
+                fontFamily: "JetBrains Mono, monospace",
+                fontSize: "11px",
+                border: `2px solid ${t.border}`,
+                background: t.muted,
+                padding: "5px 8px",
+              }}
+            >
+              absent: {Math.max(totalCount - presentCount, 0)}
+            </div>
+          </div>
+
+          <div style={{ marginBottom: "16px" }}>
+            <div
+              style={{
+                fontFamily: "Space Grotesk, sans-serif",
+                fontSize: "15px",
+                fontWeight: 700,
+                marginBottom: "10px",
+              }}
+            >
+              ATTENDANCE
+            </div>
+            <div className="admin-roster-grid">
+              {attendanceRows.map((student) => (
+                <div
+                  key={student.id}
+                  className="admin-roster-card"
+                  style={{
+                    background: student.present ? t.muted : t.panel,
+                    opacity: student.present ? 1 : 0.6,
+                    borderColor: student.present ? "#86EFAC" : t.border,
+                    boxShadow: student.present
+                      ? `4px 4px 0 #05b445`
+                      : `4px 4px 0 ${t.border}`,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: "8px",
+                      alignItems: "center",
+                      marginBottom: "6px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontFamily: "Space Grotesk, sans-serif",
+                        fontWeight: 700,
+                        fontSize: "14px",
+                      }}
+                    >
+                      {student.name}
+                    </div>
+                    <div
+                      style={{
+                        fontFamily: "JetBrains Mono, monospace",
+                        fontSize: "10px",
+                        fontWeight: 700,
+                        color: student.present ? t.accentSolid : t.mutedText,
+                      }}
+                    >
+                      {student.present ? "PRESENT" : "ABSENT"}
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: "JetBrains Mono, monospace",
+                      fontSize: "10px",
+                      color: t.mutedText,
+                    }}
+                  >
+                    {student.rfidUid}
+                    {student.present && student.time
+                      ? ` · ${new Date(student.time).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}${student.isManual ? " · manual" : ""}`
+                      : " · not marked"}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
           {session.status === "CONFIRMED" && (
             <div
               style={{
@@ -969,7 +1109,7 @@ function SessionsTab({ t }) {
             </div>
           )}
 
-          <div className="admin-roster-grid">
+          {/* <div className="admin-roster-grid">
             {session.logs?.map((log) => (
               <div
                 key={log.id}
@@ -998,7 +1138,7 @@ function SessionsTab({ t }) {
                 </div>
               </div>
             ))}
-          </div>
+          </div> */}
         </div>
       )}
     </div>

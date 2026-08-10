@@ -21,10 +21,11 @@ const ROLES = ["All", "Lead", "Member", "Nodal"];
 
 const THEMES = {
   light: {
-    bg: "#EAF0FB",
+    bg: "#ffffff",
     panel: "#FFFFFF",
     ink: "#0B0F19",
     border: "#0B0F19",
+    another_bg: "#ff0000",
     muted: "#F4F6FA",
     accentSolid: "#2F6FED",
     accentGradient: "linear-gradient(90deg, #0B1F6B, #3B5FFF)",
@@ -34,7 +35,8 @@ const THEMES = {
   dark: {
     bg: "#060608",
     panel: "#101018",
-    ink: "#FFFFFF",
+    ink: "#ffffff",
+    another_bg: "#ff0000",
     border: "#FFFFFF",
     muted: "#17171F",
     accentSolid: "#3B5FFF",
@@ -563,8 +565,12 @@ function CalendarView({
 // }
 
 export default function StudentDashboard({ onLogout }) {
-  const [mode, setMode] = useState("light");
+  const [mode, setMode] = useState(() => localStorage.getItem("themeMode") || "dark");
   const t = { ...THEMES[mode], mode };
+
+  useEffect(() => {
+    localStorage.setItem("themeMode", mode);
+  }, [mode]);
 
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [calendarExpanded, setCalendarExpanded] = useState(false);
@@ -702,7 +708,7 @@ const rows = useMemo(() => {
     });
   };
 
-  const statusColor = session?.status === "CLOSED" ? t.ink : t.accentSolid;
+  const statusColor = session?.status === "CLOSED" ? t.another_bg : t.accentSolid;
 
   const chipStyle = (active) => ({
     fontFamily: "JetBrains Mono, monospace",
