@@ -395,13 +395,36 @@ function formatSessionDateTime(value) {
     timeStyle: "short",
   }).format(date);
 }
+function formatAgenda(agenda) {
+  if (!agenda) return "";
+
+  return agenda
+    .split("\n")
+    .flatMap((line) => {
+      const trimmed = line.trim();
+
+      if (!trimmed) return [];
+
+      // Split * items into bulletins
+      if (trimmed.includes("*")) {
+        return trimmed
+          .split("*")
+          .map((item) => item.trim())
+          .filter(Boolean)
+          .map((item) => `• ${item}`);
+      }
+
+      return [trimmed];
+    })
+    .join("\n");
+}
 
 function buildSessionMessage(session) {
   return [
     `Session: ${session.title}`,
     `When: ${formatSessionDateTime(session.scheduledTime)}`,
     `Venue: ${session.venue || "TBA"}`,
-    session.agenda ? `Agenda: ${session.agenda}` : null,
+    session.agenda ? `Agenda:\n${formatAgenda(session.agenda)}` : null,
     `Status: ${session.status}`,
   ]
     .filter(Boolean)
@@ -1210,12 +1233,6 @@ function StudentsTab({ t }) {
 
   useEffect(() => {
     load();
-
-    const interval = setInterval(() => {
-      load();
-    }, 5000);
-
-    return () => clearInterval(interval);
   }, []);
 
   const showToast = (msg) => {

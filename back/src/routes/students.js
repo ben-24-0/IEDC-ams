@@ -16,6 +16,7 @@ const safeStudentSelect = () => ({
   role: true,
   team: true,
   isActive: true,
+  isAdmin: true,
 });
 
 // Async wrapper to remove try/catch boilerplate across routes
@@ -114,6 +115,43 @@ router.delete(
 );
 
 // Update student (role, team, RFID, name, active state)
+router.patch(
+  "/:id/grant-admin",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const student = await prisma.student.update({
+      where: { id: req.params.id },
+      data: { isAdmin: true },
+      select: safeStudentSelect(),
+    });
+
+    res.json(student);
+  })
+);
+
+router.patch(
+  "/:id/revoke-admin",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    // Prevent a student-admin from removing their own admin access accidentally.
+    if (req.admin.studentId && req.admin.studentId === id) {
+      return res
+        .status(400)
+        .json({ error: "You cannot revoke your own admin access." });
+    }
+
+    const student = await prisma.student.update({
+      where: { id },
+      data: { isAdmin: false },
+      select: safeStudentSelect(),
+    });
+
+    res.json(student);
+  })
+);
+
 router.patch(
   "/:id",
   requireAuth,

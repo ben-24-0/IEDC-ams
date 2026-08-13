@@ -1,4 +1,5 @@
-const BASE_URL = "https://iedc-ams.onrender.com/api";
+const API_ORIGIN = "https://iedc-ams.onrender.com"//(import.meta.env.VITE_API_BASE_URL || "http://localhost:4000").replace(/\/+$/, "");
+const BASE_URL = `${API_ORIGIN}/api`;
 
 async function request(path, options = {}, tokenKey = "adminToken") {
   const token = localStorage.getItem(tokenKey);
@@ -58,6 +59,10 @@ export const adminApi = {
     }),
   updateStudent: (id, data) =>
     request(`/students/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  grantStudentAdmin: (id) =>
+    request(`/students/${id}/grant-admin`, { method: "PATCH" }),
+  revokeStudentAdmin: (id) =>
+    request(`/students/${id}/revoke-admin`, { method: "PATCH" }),
   startSession: (id) => request(`/sessions/${id}/start`, { method: "PATCH" }),
   closeSession: (id) => request(`/sessions/${id}/close`, { method: "PATCH" }),
   deleteSession: (id) => request(`/sessions/${id}`, { method: "DELETE" }),
