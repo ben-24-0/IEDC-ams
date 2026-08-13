@@ -58,6 +58,10 @@ export const adminApi = {
     }),
   updateStudent: (id, data) =>
     request(`/students/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  grantStudentAdmin: (id) =>
+    request(`/students/${id}/grant-admin`, { method: "PATCH" }),
+  revokeStudentAdmin: (id) =>
+    request(`/students/${id}/revoke-admin`, { method: "PATCH" }),
   startSession: (id) => request(`/sessions/${id}/start`, { method: "PATCH" }),
   closeSession: (id) => request(`/sessions/${id}/close`, { method: "PATCH" }),
   deleteSession: (id) => request(`/sessions/${id}`, { method: "DELETE" }),

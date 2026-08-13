@@ -9,7 +9,18 @@ function requireAuth(req, res, next) {
 
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
-    req.admin = payload; // attach to request, later routes can use req.admin.adminId
+
+    const normalized = { ...payload };
+    if (payload.role === 'admin' && payload.studentId && !payload.adminId) {
+      normalized.adminId = payload.studentId;
+    }
+    if (payload.studentId) {
+      normalized.studentId = payload.studentId;
+    }
+
+    req.admin = normalized;
+    req.user = normalized;
+    req.isAdmin = Boolean(payload.isAdmin || payload.role === 'admin');
     next();
   } catch (err) {
     return res.status(401).json({ error: 'invalid or expired token' });

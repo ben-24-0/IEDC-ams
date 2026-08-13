@@ -13,6 +13,7 @@ const safeStudentSelect = () => ({
   rfidUid: true,
   username: true,
   isApproved: true,
+  isAdmin: true,
   role: true,
   team: true,
   isActive: true,
@@ -118,11 +119,11 @@ router.patch(
   "/:id",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const { name, rfidUid, role, team, isActive } = req.body;
+    const { name, rfidUid, role, team, isActive, isAdmin } = req.body;
     try {
       const student = await prisma.student.update({
         where: { id: req.params.id },
-        data: { name, rfidUid, role, team, isActive },
+        data: { name, rfidUid, role, team, isActive, isAdmin },
         select: safeStudentSelect(),
       });
       res.json(student);
@@ -134,6 +135,60 @@ router.patch(
       }
       throw err;
     }
+  })
+);
+
+router.patch(
+  "/:id/grant-admin",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const student = await prisma.student.findUnique({ where: { id: req.params.id } });
+    if (!student) return res.status(404).json({ error: "Student not found" });
+    if (!student.username || !student.passwordHash) {
+      return res.status(400).json({ error: "Student must have a login account before being granted admin access" });
+    }
+
+    const adminUser = await prisma.adminUser.upsert({
+      where: { username: student.username },
+      update: {
+        passwordHash: student.passwordHash,
+        studentId: student.id,
+      },
+      create: {
+        username: student.username,
+        passwordHash: student.passwordHash,
+        studentId: student.id,
+      },
+    });
+
+    const updatedStudent = await prisma.student.update({
+      where: { id: student.id },
+      data: { isAdmin: true },
+      select: safeStudentSelect(),
+    });
+
+    res.json({ ...updatedStudent, adminUserId: adminUser.id });
+  })
+);
+
+router.patch(
+  "/:id/revoke-admin",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const student = await prisma.student.findUnique({ where: { id: req.params.id } });
+    if (!student) return res.status(404).json({ error: "Student not found" });
+
+    if (student.username) {
+      await prisma.adminUser.deleteMany({ where: { username: student.username, studentId: student.id } });
+    }
+
+    const updatedStudent = await prisma.student.update({
+      where: { id: student.id },
+      data: { isAdmin: false },
+      select: safeStudentSelect(),
+    });
+
+    res.json(updatedStudent);
   })
 );
 
@@ -296,13 +351,28 @@ router.post(
       return res.status(403).json({ error: "Account inactive or pending approval" });
     }
 
+    const adminUser = student.isAdmin
+      ? await prisma.adminUser.findUnique({ where: { username: student.username } })
+      : null;
+
     const token = jwt.sign(
-      { studentId: student.id, username: student.username, role: "student" },
+      {
+        studentId: student.id,
+        adminId: adminUser?.id || student.id,
+        username: student.username,
+        role: student.isAdmin ? "admin" : "student",
+        isAdmin: student.isAdmin,
+      },
       process.env.JWT_SECRET,
       { expiresIn: "8h" }
     );
 
-    res.json({ token, name: student.name, team: student.team });
+    res.json({
+      token,
+      name: student.name,
+      team: student.team,
+      isAdmin: student.isAdmin,
+    });
   })
 );
 

@@ -20,6 +20,7 @@ export default function AdminLogin({ onLogin }) {
     try {
       const { token } = await adminApi.login(username, password);
       localStorage.setItem("adminToken", token);
+      localStorage.setItem("userRole", "admin");
       onLogin();
     } catch (err) {
       setError(err.message);
