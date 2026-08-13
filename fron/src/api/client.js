@@ -1,4 +1,8 @@
-const BASE_URL = "https://iedc-ams.onrender.com/api";
+const BASE_URL =
+  (import.meta.env.VITE_API_URL || "").replace(/\/$/, "") ||
+  (window.location.hostname === "localhost"
+    ? "http://localhost:4000/api"
+    : "https://iedc-ams.onrender.com/api");
 
 async function request(path, options = {}, tokenKey = "adminToken") {
   const token = localStorage.getItem(tokenKey);
@@ -32,7 +36,7 @@ async function request(path, options = {}, tokenKey = "adminToken") {
     if (data?.error) throw new Error(data.error);
     if (rawBody && rawBody.trim().startsWith("<!DOCTYPE")) {
       throw new Error(
-        "backend returned an HTML page instead of JSON; check the API server",
+        `backend returned HTML instead of JSON. Check the API server at ${BASE_URL} and make sure the backend is running on the expected port.`,
       );
     }
     throw new Error("request failed");
