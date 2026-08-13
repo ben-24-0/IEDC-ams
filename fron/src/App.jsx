@@ -19,21 +19,11 @@ function AdminSection() {
 
 function StudentSection() {
   const [loggedIn, setLoggedIn] = useState(!!localStorage.getItem("studentToken"));
-  const isStudentAdmin =
-    !!localStorage.getItem("adminToken") &&
-    localStorage.getItem("userRole") === "admin";
 
   const handleLogout = () => {
     localStorage.removeItem("studentToken");
-    localStorage.removeItem("adminToken");
-    localStorage.removeItem("studentTeam");
-    localStorage.removeItem("userRole");
     setLoggedIn(false);
   };
-
-  if (isStudentAdmin) {
-    return <AdminDashboard onLogout={handleLogout} />;
-  }
 
   if (!loggedIn) return <StudentLogin onLogin={() => setLoggedIn(true)} />;
   return <StudentDashboard onLogout={handleLogout} />;

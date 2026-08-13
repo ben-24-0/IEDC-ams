@@ -26,18 +26,9 @@ export default function StudentLogin({ onLogin }) {
     setInfo("");
     setLoading(true);
     try {
-      const { token, team, isAdmin } = await studentApi.login(username, password);
+      const { token, team } = await studentApi.login(username, password);
       localStorage.setItem("studentToken", token);
       localStorage.setItem("studentTeam", team || "");
-
-      if (isAdmin) {
-        localStorage.setItem("adminToken", token);
-        localStorage.setItem("userRole", "admin");
-      } else {
-        localStorage.removeItem("adminToken");
-        localStorage.removeItem("userRole");
-      }
-
       onLogin();
     } catch (err) {
       setError(err.message);

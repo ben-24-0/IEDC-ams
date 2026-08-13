@@ -1,8 +1,4 @@
-const BASE_URL =
-  (import.meta.env.VITE_API_URL || "").replace(/\/$/, "") ||
-  (window.location.hostname === "localhost"
-    ? "http://localhost:4000/api"
-    : "https://iedc-ams.onrender.com/api");
+const BASE_URL = "https://iedc-ams.onrender.com/api";
 
 async function request(path, options = {}, tokenKey = "adminToken") {
   const token = localStorage.getItem(tokenKey);
@@ -36,7 +32,7 @@ async function request(path, options = {}, tokenKey = "adminToken") {
     if (data?.error) throw new Error(data.error);
     if (rawBody && rawBody.trim().startsWith("<!DOCTYPE")) {
       throw new Error(
-        `backend returned HTML instead of JSON. Check the API server at ${BASE_URL} and make sure the backend is running on the expected port.`,
+        "backend returned an HTML page instead of JSON; check the API server",
       );
     }
     throw new Error("request failed");
@@ -62,10 +58,6 @@ export const adminApi = {
     }),
   updateStudent: (id, data) =>
     request(`/students/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-  grantStudentAdmin: (id) =>
-    request(`/students/${id}/grant-admin`, { method: "PATCH" }),
-  revokeStudentAdmin: (id) =>
-    request(`/students/${id}/revoke-admin`, { method: "PATCH" }),
   startSession: (id) => request(`/sessions/${id}/start`, { method: "PATCH" }),
   closeSession: (id) => request(`/sessions/${id}/close`, { method: "PATCH" }),
   deleteSession: (id) => request(`/sessions/${id}`, { method: "DELETE" }),
