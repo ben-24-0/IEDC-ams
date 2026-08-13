@@ -496,8 +496,17 @@ function SessionsTab({ t }) {
     loadSessions();
   }, []);
   useEffect(() => {
+    if (!activeId) return;
+
     loadDetail(activeId);
+
+    const interval = setInterval(() => {
+      loadDetail(activeId);
+    }, 5000);
+
+    return () => clearInterval(interval);
   }, [activeId]);
+
 
   const session = detail;
   const attendanceRows = session
@@ -1302,6 +1311,21 @@ function StudentsTab({ t }) {
     }
   };
 
+  const handleToggleAdmin = async (student) => {
+    try {
+      if (student.isAdmin) {
+        await adminApi.revokeStudentAdmin(student.id);
+        showToast(`${student.name} lost admin access.`);
+      } else {
+        await adminApi.grantStudentAdmin(student.id);
+        showToast(`${student.name} now has admin access.`);
+      }
+      load();
+    } catch (err) {
+      alert(err.message || "Failed to update admin access");
+    }
+  };
+
   const handleRestoreArchived = async (id) => {
     try {
       await adminApi.restoreStudent(id);
@@ -1848,6 +1872,16 @@ style={{
                                 </span>
                               )}
                             </div>
+                            <div>
+                              <span
+                                style={{
+                                  color: s.isAdmin ? "#15803D" : "#6B7280",
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {s.isAdmin ? "Admin Access Enabled" : "Standard Member"}
+                              </span>
+                            </div>
                           </div>
                         </div>
 
@@ -1858,6 +1892,7 @@ style={{
                             borderTop: `1px solid ${t.border || "#000"}`,
                             paddingTop: "10px",
                             marginTop: "6px",
+                            flexWrap: "wrap",
                           }}
                         >
                           <button
@@ -1869,10 +1904,26 @@ style={{
                               fontSize: "11px",
                               fontWeight: 700,
                               flex: 1,
+                              minWidth: "80px",
                             }}
                             onClick={() => startEdit(s)}
                           >
                             Edit
+                          </button>
+                          <button
+                            className="brutal-btn"
+                            style={{
+                              background: s.isAdmin ? "#6B7280" : "#10B981",
+                              color: "#fff",
+                              padding: "5px 10px",
+                              fontSize: "11px",
+                              fontWeight: 700,
+                              flex: 1,
+                              minWidth: "104px",
+                            }}
+                            onClick={() => handleToggleAdmin(s)}
+                          >
+                            {s.isAdmin ? "Revoke Admin" : "Grant Admin"}
                           </button>
                           <button
                             className="brutal-btn"
@@ -1883,6 +1934,7 @@ style={{
                               fontSize: "11px",
                               fontWeight: 700,
                               flex: 1,
+                              minWidth: "80px",
                             }}
                             onClick={() => handleDeleteStudent(s.id, s.name)}
                           >

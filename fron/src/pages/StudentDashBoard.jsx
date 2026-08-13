@@ -65,6 +65,39 @@ function isCurrentMonth(session, referenceDate = new Date()) {
   );
 }
 
+function formatAgenda(agenda) {
+  if (!agenda) return [];
+
+  return agenda
+    .split("\n")
+    .flatMap((line) => {
+      const trimmed = line.trim();
+
+      if (!trimmed) return [];
+
+      // If the line contains *, split each * item into a bulletin
+      if (trimmed.includes("*")) {
+        return trimmed
+          .split("*")
+          .map((item) => item.trim())
+          .filter(Boolean)
+          .map((item) => ({
+            type: "bulletin",
+            text: item,
+          }));
+      }
+
+      // Normal multi-line agenda text
+      return [
+        {
+          type: "text",
+          text: trimmed,
+        },
+      ];
+    });
+}
+
+
 function CalendarView({
   t,
   expanded,
@@ -1135,9 +1168,49 @@ const rows = useMemo(() => {
         </summary>
         <div style={{ marginTop: "10px" }}>
           <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "10px", color: t.mutedText, marginBottom: "4px" }}>AGENDA</div>
-          <div style={{ fontSize: "13px", lineHeight: 1.5, whiteSpace: "pre-wrap", marginBottom: "16px" }}>
-            {session.agenda || "not set"}
+          <div
+  style={{
+    fontSize: "13px",
+    lineHeight: 1.5,
+    marginBottom: "16px",
+  }}
+>
+  {session.agenda ? (
+    formatAgenda(session.agenda).map((item, index) => {
+      if (item.type === "bulletin") {
+        return (
+          <div
+            key={index}
+            style={{
+              display: "flex",
+              gap: "8px",
+              marginBottom: "6px",
+            }}
+          >
+            <span
+              style={{
+                fontWeight: 700,
+                color: t.accentSolid,
+              }}
+            >
+              •
+            </span>
+            <span>{item.text}</span>
           </div>
+        );
+      }
+
+      return (
+        <div key={index} style={{ marginBottom: "6px" }}>
+          {item.text}
+        </div>
+      );
+    })
+  ) : (
+    "not set"
+  )}
+</div>
+
           
           <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "10px", color: t.mutedText, marginBottom: "4px" }}>MINUTES</div>
           
