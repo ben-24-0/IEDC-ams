@@ -2454,8 +2454,17 @@ function DeviceTab({ t }) {
 function CaptureButton({ t, onCaptured }) {
   const [capturing, setCapturing] = useState(false);
   const [msg, setMsg] = useState("");
+  const [useNFC, setUseNFC] = useState(false);
+  const [nfcSupported, setNfcSupported] = useState(false);
 
-  const handleClick = async () => {
+  useEffect(() => {
+    // Detect if device supports Web NFC API
+    if ("NDEFReader" in window) {
+      setNfcSupported(true);
+    }
+  }, []);
+
+  const handleServerCapture = async () => {
     setCapturing(true);
     setMsg("waiting for tap...");
     try {
@@ -2470,8 +2479,94 @@ function CaptureButton({ t, onCaptured }) {
     }
   };
 
+  const handleMobileNFC = async () => {
+    if (!("NDEFReader" in window)) {
+      setMsg("NFC not supported on this device");
+      return;
+    }
+
+    setCapturing(true);
+    setMsg("tap NFC tag...");
+    try {
+      const ndef = new NDEFReader();
+      await ndef.scan();
+
+      ndef.onreading = (event) => {
+        const decoder = new TextDecoder();
+        const records = event.message.records;
+        
+        // Extract UID from NDEF record
+        let uid = null;
+        
+        for (const record of records) {
+          if (record.recordType === "urn:nfc:wkt:U" || record.recordType === "uri") {
+            // URI type record
+            uid = decoder.decode(record.data);
+          } else if (record.recordType === "urn:nfc:wkt:T" || record.recordType === "text") {
+            // Text type record
+            uid = decoder.decode(record.data).slice(3); // Skip language code
+          } else if (record.recordType === ":t" || record.recordType === "t") {
+            // Simple text record
+            uid = decoder.decode(record.data);
+          }
+        }
+
+        // If no recognized record type, try to extract from raw data
+        if (!uid && records.length > 0) {
+          try {
+            uid = decoder.decode(records[0].data).trim();
+          } catch (e) {
+            uid = Array.from(new Uint8Array(records[0].data))
+              .map(b => b.toString(16).padStart(2, "0"))
+              .join(":");
+          }
+        }
+
+        if (uid) {
+          onCaptured(uid);
+          setMsg("captured!");
+          setCapturing(false);
+          setTimeout(() => setMsg(""), 2000);
+        } else {
+          setMsg("no UID found");
+          setCapturing(false);
+          setTimeout(() => setMsg(""), 2000);
+        }
+      };
+
+      ndef.onreadingerror = () => {
+        setMsg("read error");
+        setCapturing(false);
+        setTimeout(() => setMsg(""), 2000);
+      };
+    } catch (err) {
+      setMsg(err.message || "NFC error");
+      setCapturing(false);
+      setTimeout(() => setMsg(""), 2000);
+    }
+  };
+
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+      {nfcSupported && (
+        <button
+          type="button"
+          className="brutal-btn icon-btn"
+          style={{
+            background: useNFC ? t.accentSolid : t.panel,
+            color: useNFC ? "#fff" : t.ink,
+            fontSize: "11px",
+            border: `3px solid ${t.border}`,
+            fontWeight: 700,
+          }}
+          onClick={() => setUseNFC(!useNFC)}
+          title={useNFC ? "Switch to server scanner" : "Switch to mobile NFC"}
+          aria-label={useNFC ? "Switch to server scanner" : "Switch to mobile NFC"}
+        >
+          {useNFC ? "📱" : "🔌"}
+        </button>
+      )}
+
       <button
         type="button"
         className="brutal-btn icon-btn"
@@ -2480,8 +2575,10 @@ function CaptureButton({ t, onCaptured }) {
           color: "#0B0F19",
           fontSize: "11px",
         }}
-        onClick={handleClick}
+        onClick={useNFC ? handleMobileNFC : handleServerCapture}
         disabled={capturing}
+        title={useNFC ? "Tap NFC tag on device" : "Capture from server scanner"}
+        aria-label={useNFC ? "Tap NFC tag on device" : "Capture from server scanner"}
       >
         {capturing ? "..." : "📇"}
       </button>
