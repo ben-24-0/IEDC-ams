@@ -1,4 +1,4 @@
-const API_ORIGIN = "http://localhost:4000";//"https://iedc-ams.onrender.com"
+const API_ORIGIN = "https://iedc-ams.onrender.com";
 const BASE_URL = `${API_ORIGIN}/api`;
 
 async function request(path, options = {}, tokenKey = "adminToken") {
