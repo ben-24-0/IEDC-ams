@@ -729,73 +729,104 @@ function SessionsTab({ t }) {
   };
 
   const stopPhoneScan = () => {
-    if (phoneScanAbortRef.current) {
-      phoneScanAbortRef.current.abort();
-      phoneScanAbortRef.current = null;
-    }
-  };
+  if (phoneScanAbortRef.current) {
+    phoneScanAbortRef.current.abort();
+    phoneScanAbortRef.current = null;
+  }
 
-  const handlePhoneAttendanceTap = async () => {
-    if (!session || session.status !== "ACTIVE") return;
-    if (!("NDEFReader" in window)) return;
+  setPhoneScanning(false);
+  setPhoneScanMsg("");
+};
 
+const handlePhoneAttendanceTap = async () => {
+  if (!session || session.status !== "ACTIVE") return;
+  if (!("NDEFReader" in window)) {
+    setPhoneScanMsg("NFC not supported on this device");
+    return;
+  }
+
+  // If already scanning, clicking the button turns scanning OFF.
+  if (phoneScanning) {
     stopPhoneScan();
-    setPhoneScanning(true);
-    setPhoneScanMsg("tap NFC card on phone...");
+    setPhoneScanMsg("NFC scanner stopped");
+    setTimeout(() => setPhoneScanMsg(""), 2500);
+    return;
+  }
 
-    try {
-      const ndef = new NDEFReader();
-      const abortController = new AbortController();
-      phoneScanAbortRef.current = abortController;
-      let handled = false;
+  setPhoneScanning(true);
+  setPhoneScanMsg("READY — tap NFC cards...");
 
-      ndef.onreading = async (event) => {
-        if (handled) return;
-        handled = true;
+  const abortController = new AbortController();
+  phoneScanAbortRef.current = abortController;
 
-        const rfidUid = normalizeUid(event.serialNumber);
-        if (!rfidUid) {
-          setPhoneScanMsg("tag detected, but UID unavailable");
-          stopPhoneScan();
-          setPhoneScanning(false);
-          setTimeout(() => setPhoneScanMsg(""), 3500);
-          return;
-        }
+  try {
+    const ndef = new NDEFReader();
 
-        try {
-          const result = await adminApi.attendanceTap(rfidUid, session.id);
-          const studentName = result?.log?.student?.name;
-          setPhoneScanMsg(
-            studentName
-              ? `${studentName} marked present`
-              : `attendance marked for ${rfidUid}`,
-          );
-          await loadDetail(session.id);
-          await loadSessions();
-        } catch (err) {
-          setPhoneScanMsg(err.message || "attendance marking failed");
-        } finally {
-          stopPhoneScan();
-          setPhoneScanning(false);
-          setTimeout(() => setPhoneScanMsg(""), 3500);
-        }
-      };
+    ndef.onreading = async (event) => {
+      const rfidUid = normalizeUid(event.serialNumber);
 
-      ndef.onreadingerror = () => {
-        setPhoneScanMsg("NFC read error");
-        stopPhoneScan();
-        setPhoneScanning(false);
-        setTimeout(() => setPhoneScanMsg(""), 3500);
-      };
+      if (!rfidUid) {
+        setPhoneScanMsg("tag detected, but UID unavailable");
+        return;
+      }
 
-      await ndef.scan({ signal: abortController.signal });
-    } catch (err) {
-      setPhoneScanMsg(err.message || "NFC scan failed");
-      stopPhoneScan();
-      setPhoneScanning(false);
-      setTimeout(() => setPhoneScanMsg(""), 3500);
+      // Show immediate feedback while the API request is happening.
+      setPhoneScanMsg(`scanning ${rfidUid}...`);
+
+      try {
+        const result = await adminApi.attendanceTap(
+          rfidUid,
+          session.id
+        );
+
+        const studentName = result?.log?.student?.name;
+
+        setPhoneScanMsg(
+          studentName
+            ? `✓ ${studentName} marked present — ready for next card`
+            : `✓ ${rfidUid} marked present — ready for next card`
+        );
+
+        // Refresh attendance without stopping NFC scanning.
+        await loadDetail(session.id);
+        await loadSessions();
+      } catch (err) {
+        console.error("Attendance tap failed:", err);
+
+        setPhoneScanMsg(
+          err.message
+            ? `✕ ${err.message} — ready for next card`
+            : "✕ attendance failed — ready for next card"
+        );
+      }
+    };
+
+    ndef.onreadingerror = () => {
+      // Do NOT stop the scanner on a single failed read.
+      setPhoneScanMsg("NFC read error — ready for next card");
+    };
+
+    await ndef.scan({
+      signal: abortController.signal,
+    });
+
+    setPhoneScanMsg("READY — tap NFC cards...");
+  } catch (err) {
+    // Abort is expected when the admin presses the button to stop.
+    if (err?.name === "AbortError") {
+      return;
     }
-  };
+
+    console.error("NFC scan failed:", err);
+
+    setPhoneScanMsg(
+      err.message || "NFC scan failed"
+    );
+
+    setPhoneScanning(false);
+    phoneScanAbortRef.current = null;
+  }
+};
 
   if (loading)
     return (
@@ -1320,15 +1351,16 @@ function SessionsTab({ t }) {
                   type="button"
                   className="brutal-btn"
                   style={{
-                    background: t.cyan,
-                    color: "#0B0F19",
+                    background: phoneScanning ? "#FF5C5C" : t.cyan,
+                    color: phoneScanning ? "#fff" : "#0B0F19",
                     padding: "8px 14px",
                     fontSize: "12px",
                   }}
                   onClick={handlePhoneAttendanceTap}
-                  disabled={phoneScanning}
                 >
-                  {phoneScanning ? "WAITING FOR TAP..." : "MARK ATTENDANCE (PHONE NFC)"}
+                  {phoneScanning
+                    ? "■ STOP SCANNING"
+                    : "MARK ATTENDANCE"}
                 </button>
                 {phoneScanMsg && (
                   <span
