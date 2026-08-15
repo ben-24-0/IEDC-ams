@@ -109,7 +109,7 @@ export default function StudentLogin({ onLogin }) {
     try {
       await studentApi.forgotPassword(username);
       setInfo(
-        "if an account exists with this email, password reset instructions have been sent."
+        "if an account exists with this email, contact admin to get a new temporary password."
       );
     } catch (err) {
       setError(err.message);
