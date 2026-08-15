@@ -144,6 +144,18 @@ function parseDocumentUrl(rawUrl) {
   }
 }
 
+async function resolveCreatorAdminId(payload) {
+  if (payload?.adminId) return payload.adminId;
+
+  // Student-admin tokens don't carry adminId; fall back to an existing admin owner.
+  const fallbackAdmin = await prisma.adminUser.findFirst({
+    orderBy: { createdAt: "asc" },
+    select: { id: true },
+  });
+
+  return fallbackAdmin?.id || null;
+}
+
 // create a session (admin picks title, optional scheduled time)
 router.post("/", requireAuth, async (req, res) => {
   if (!requireAdmin(req, res)) return;
@@ -158,6 +170,13 @@ router.post("/", requireAuth, async (req, res) => {
       .json({ error: "title, scheduled time, and venue are required" });
   }
 
+  const createdById = await resolveCreatorAdminId(req.admin);
+  if (!createdById) {
+    return res
+      .status(500)
+      .json({ error: "no admin owner available to create session" });
+  }
+
   const session = await prisma.session.create({
     data: {
       title: title.trim(),
@@ -166,7 +185,7 @@ router.post("/", requireAuth, async (req, res) => {
       agenda: agenda?.trim() || null,
       notificationChannel: notificationChannel?.trim() || null,
       notificationTarget: notificationTarget?.trim() || null,
-      createdById: req.admin.adminId,
+      createdById,
     },
   });
 
