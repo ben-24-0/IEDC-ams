@@ -11,8 +11,44 @@ const t = {
   cyan: "#00E5FF",
 };
 
+
+//ForgotPasswordFunction
+function ForgotPasswordForm({ t, onDone }) {
+  const [email, setEmail] = useState("");
+  const [msg, setMsg] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const res = await studentApi.forgotPassword(email);
+      setMsg(res.message);
+    } catch (err) {
+      setMsg(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} style={{ border: `4px solid ${t.border}`, boxShadow: `8px 8px 0 ${t.border}`, background: t.panel, padding: "32px", width: "340px" }}>
+      <h1 style={{ fontFamily: "Space Grotesk, sans-serif", fontSize: "20px", marginBottom: "16px" }}>RESET PASSWORD</h1>
+      <label style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "11px", opacity: 0.6 }}>EMAIL</label>
+      <input className="brutal-input" style={{ marginTop: "4px", marginBottom: "16px" }} value={email} onChange={(e) => setEmail(e.target.value)} />
+      {msg && <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "12px", color: t.cyan, marginBottom: "14px" }}>{msg}</div>}
+      <button type="submit" disabled={loading} style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 700, border: `3px solid ${t.border}`, boxShadow: `4px 4px 0 ${t.border}`, background: t.accentSolid, color: "#fff", padding: "10px", width: "100%", cursor: "pointer", fontSize: "13px", marginBottom: "12px" }}>
+        {loading ? "..." : "REQUEST RESET"}
+      </button>
+      <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "11px", opacity: 0.6, textAlign: "center", cursor: "pointer" }} onClick={onDone}>
+        back to login
+      </div>
+    </form>
+  );
+}
+
 export default function StudentLogin({ onLogin }) {
-  const [mode, setMode] = useState("login"); // login | register
+  const [mode, setMode] = useState("login"); // login | register | forgot
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -25,10 +61,18 @@ export default function StudentLogin({ onLogin }) {
     setError("");
     setInfo("");
     setLoading(true);
+
     try {
-      const { token, team } = await studentApi.login(username, password);
+      const { token, team, mustChangePassword } =
+        await studentApi.login(username, password);
+
       localStorage.setItem("studentToken", token);
+      localStorage.setItem(
+        "mustChangePassword",
+        mustChangePassword ? "true" : "false"
+      );
       localStorage.setItem("studentTeam", team || "");
+
       onLogin();
     } catch (err) {
       setError(err.message);
@@ -42,9 +86,12 @@ export default function StudentLogin({ onLogin }) {
     setError("");
     setInfo("");
     setLoading(true);
+
     try {
       await studentApi.register(name, username, password);
-      setInfo("registered! waiting for admin approval before you can log in.");
+      setInfo(
+        "registered! waiting for admin approval before you can log in."
+      );
       setMode("login");
     } catch (err) {
       setError(err.message);
@@ -52,6 +99,31 @@ export default function StudentLogin({ onLogin }) {
       setLoading(false);
     }
   };
+
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+    setError("");
+    setInfo("");
+    setLoading(true);
+
+    try {
+      await studentApi.forgotPassword(username);
+      setInfo(
+        "if an account exists with this email, password reset instructions have been sent."
+      );
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit =
+    mode === "login"
+      ? handleLogin
+      : mode === "register"
+      ? handleRegister
+      : handleForgotPassword;
 
   return (
     <div
@@ -67,6 +139,7 @@ export default function StudentLogin({ onLogin }) {
     >
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@700&family=Inter:wght@400;600&family=JetBrains+Mono:wght@500&display=swap');
+
         .brutal-input {
           font-family: 'JetBrains Mono', monospace;
           border: 2px solid ${t.border};
@@ -75,12 +148,16 @@ export default function StudentLogin({ onLogin }) {
           padding: 10px 12px;
           width: 100%;
           font-size: 14px;
+          box-sizing: border-box;
         }
-        .brutal-input:focus { outline: 2px solid ${t.cyan}; }
+
+        .brutal-input:focus {
+          outline: 2px solid ${t.cyan};
+        }
       `}</style>
 
       <form
-        onSubmit={mode === "login" ? handleLogin : handleRegister}
+        onSubmit={handleSubmit}
         style={{
           border: `4px solid ${t.border}`,
           boxShadow: `8px 8px 0 ${t.border}`,
@@ -97,6 +174,7 @@ export default function StudentLogin({ onLogin }) {
             marginBottom: "10px",
           }}
         />
+
         <h1
           style={{
             fontFamily: "Space Grotesk, sans-serif",
@@ -105,10 +183,17 @@ export default function StudentLogin({ onLogin }) {
           }}
         >
           IEDC{" "}
-          <span style={{ opacity: 0.6, fontWeight: 500, fontSize: "14px" }}>
+          <span
+            style={{
+              opacity: 0.6,
+              fontWeight: 500,
+              fontSize: "14px",
+            }}
+          >
             FISAT
           </span>
         </h1>
+
         <div
           style={{
             fontFamily: "JetBrains Mono, monospace",
@@ -117,9 +202,14 @@ export default function StudentLogin({ onLogin }) {
             marginBottom: "20px",
           }}
         >
-          {mode === "login" ? "MEMBER LOGIN" : "MEMBER REGISTER"}
+          {mode === "login"
+            ? "MEMBER LOGIN"
+            : mode === "register"
+            ? "MEMBER REGISTER"
+            : "PASSWORD RESET"}
         </div>
 
+        {/* REGISTER ONLY */}
         {mode === "register" && (
           <>
             <label
@@ -131,15 +221,20 @@ export default function StudentLogin({ onLogin }) {
             >
               FULL NAME
             </label>
+
             <input
               className="brutal-input"
-              style={{ marginTop: "4px", marginBottom: "16px" }}
+              style={{
+                marginTop: "4px",
+                marginBottom: "16px",
+              }}
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
           </>
         )}
 
+        {/* EMAIL */}
         <label
           style={{
             fontFamily: "JetBrains Mono, monospace",
@@ -147,31 +242,63 @@ export default function StudentLogin({ onLogin }) {
             opacity: 0.6,
           }}
         >
-          email
+          EMAIL
         </label>
+
         <input
           className="brutal-input"
-          style={{ marginTop: "4px", marginBottom: "16px" }}
+          type="email"
+          style={{
+            marginTop: "4px",
+            marginBottom: mode === "forgot" ? "20px" : "16px",
+          }}
           value={username}
           onChange={(e) => setUsername(e.target.value)}
+          required
         />
 
-        <label
-          style={{
-            fontFamily: "JetBrains Mono, monospace",
-            fontSize: "11px",
-            opacity: 0.6,
-          }}
-        >
-          PASSWORD
-        </label>
-        <input
-          className="brutal-input"
-          type="password"
-          style={{ marginTop: "4px", marginBottom: "20px" }}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
+        {/* PASSWORD - LOGIN / REGISTER ONLY */}
+        {mode !== "forgot" && (
+          <>
+            <label
+              style={{
+                fontFamily: "JetBrains Mono, monospace",
+                fontSize: "11px",
+                opacity: 0.6,
+              }}
+            >
+              PASSWORD
+            </label>
+
+            <input
+              className="brutal-input"
+              type="password"
+              style={{
+                marginTop: "4px",
+                marginBottom: "20px",
+              }}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+          </>
+        )}
+
+        {/* FORGOT PASSWORD DESCRIPTION */}
+        {mode === "forgot" && (
+          <div
+            style={{
+              fontFamily: "JetBrains Mono, monospace",
+              fontSize: "11px",
+              opacity: 0.6,
+              lineHeight: "1.5",
+              marginBottom: "20px",
+            }}
+          >
+            Enter your registered email and we'll send you instructions to
+            reset your password.
+          </div>
+        )}
 
         {error && (
           <div
@@ -185,6 +312,7 @@ export default function StudentLogin({ onLogin }) {
             {error}
           </div>
         )}
+
         {info && (
           <div
             style={{
@@ -215,26 +343,110 @@ export default function StudentLogin({ onLogin }) {
             marginBottom: "12px",
           }}
         >
-          {loading ? "..." : mode === "login" ? "LOGIN" : "REGISTER"}
+          {loading
+            ? "..."
+            : mode === "login"
+            ? "LOGIN"
+            : mode === "register"
+            ? "REGISTER"
+            : "SEND RESET LINK"}
         </button>
 
+        {/* MODE TOGGLES */}
         <div
           style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "8px",
+            alignItems: "center",
             fontFamily: "JetBrains Mono, monospace",
             fontSize: "11px",
-            opacity: 0.6,
-            textAlign: "center",
-            cursor: "pointer",
-          }}
-          onClick={() => {
-            setMode(mode === "login" ? "register" : "login");
-            setError("");
-            setInfo("");
           }}
         >
-          {mode === "login"
-            ? "new member? register here"
-            : "already have an account? login"}
+          {mode === "login" && (
+            <>
+              <div
+                style={{
+                  opacity: 0.6,
+                  cursor: "pointer",
+                }}
+                onClick={() => {
+                  setMode("register");
+                  setError("");
+                  setInfo("");
+                }}
+              >
+                new member? register here
+              </div>
+
+              <div
+                style={{
+                  opacity: 0.6,
+                  cursor: "pointer",
+                  color: t.cyan,
+                }}
+                onClick={() => {
+                  setMode("forgot");
+                  setError("");
+                  setInfo("");
+                }}
+              >
+                forgot password?
+              </div>
+            </>
+          )}
+
+          {mode === "register" && (
+            <div
+              style={{
+                opacity: 0.6,
+                cursor: "pointer",
+              }}
+              onClick={() => {
+                setMode("login");
+                setError("");
+                setInfo("");
+              }}
+            >
+              already have an account? login
+            </div>
+          )}
+
+          {mode === "forgot" && (
+            <div
+              style={{
+                opacity: 0.6,
+                cursor: "pointer",
+              }}
+              onClick={() => {
+                setMode("login");
+                setError("");
+                setInfo("");
+              }}
+            >
+              remember your password? login
+            </div>
+          )}
+
+          {/* {mode === "login" && (
+              <div
+                style={{
+                  fontFamily: "JetBrains Mono, monospace",
+                  fontSize: "11px",
+                  opacity: 0.5,
+                  textAlign: "center",
+                  cursor: "pointer",
+                  marginTop: "8px",
+                }}
+                onClick={() => {
+                  setMode("forgot");
+                  setError("");
+                  setInfo("");
+                }}
+              >
+                forgot password?
+              </div>
+            )} */}
         </div>
       </form>
     </div>

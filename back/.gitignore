@@ -34,3 +34,5 @@ dist/
 /generated/prisma
 .claude
 .agents
+./src/passwordReset.js
+./src/listStudents.js

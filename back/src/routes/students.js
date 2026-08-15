@@ -17,6 +17,7 @@ const safeStudentSelect = () => ({
   team: true,
   isActive: true,
   isAdmin: true,
+  passwordResetRequested: true, // ADD THIS LINE
 });
 
 // Async wrapper to remove try/catch boilerplate across routes
@@ -157,12 +158,31 @@ router.patch(
   requireAuth,
   asyncHandler(async (req, res) => {
     const { name, rfidUid, role, team, isActive } = req.body;
+
     try {
+      const existing = await prisma.student.findUnique({
+        where: { id: req.params.id },
+      });
+
+      if (!existing) {
+        return res.status(404).json({
+          error: "Student not found",
+          id: req.params.id,
+        });
+      }
+
       const student = await prisma.student.update({
         where: { id: req.params.id },
-        data: { name, rfidUid, role, team, isActive },
+        data: {
+          name,
+          rfidUid,
+          role,
+          team,
+          isActive,
+        },
         select: safeStudentSelect(),
       });
+
       res.json(student);
     } catch (err) {
       if (err.code === "P2002") {
@@ -170,9 +190,10 @@ router.patch(
           error: "RFID card UID already assigned to another student",
         });
       }
+
       throw err;
     }
-  })
+  }),
 );
 
 // Deactivate student (Soft Delete to preserve relational integrity with attendance & logs)
@@ -311,6 +332,70 @@ router.delete(
    AUTHENTICATION
    ========================================================================== */
 
+
+// public - member requests a password reset (admin handles it manually)
+router.post(
+  "/forgot-password",
+  asyncHandler(async (req, res) => {
+    const { username } = req.body;
+    if (!username) return res.status(400).json({ error: "email required" });
+
+    const student = await prisma.student.findUnique({ where: { username } });
+    // don't leak whether the email exists - always return success-shaped response
+    if (student) {
+      await prisma.student.update({
+        where: { id: student.id },
+        data: { passwordResetRequested: true },
+      });
+    }
+    res.json({ message: "if that account exists, a reset request was sent to your club admin" });
+  })
+);
+
+// admin - issue a temp password for a student who requested reset
+router.patch(
+  "/:id/reset-password",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const tempPassword = Math.random().toString(36).slice(-8); // random 8-char temp password
+    const passwordHash = await bcrypt.hash(tempPassword, 10);
+
+    await prisma.student.update({
+      where: { id: req.params.id },
+      data: { passwordHash, mustChangePassword: true, passwordResetRequested: false },
+    });
+
+    res.json({ tempPassword }); // ONLY time the plaintext is ever exposed - admin relays it manually
+  })
+);
+
+// student - change own password (works for both voluntary changes and the forced post-temp-password flow)
+router.patch(
+  "/me/password",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const studentId = req.admin.studentId;
+    if (!studentId) return res.status(403).json({ error: "student login required" });
+
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: "current and new password required" });
+    }
+
+    const student = await prisma.student.findUnique({ where: { id: studentId } });
+    const valid = await bcrypt.compare(currentPassword, student.passwordHash);
+    if (!valid) return res.status(401).json({ error: "current password is incorrect" });
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await prisma.student.update({
+      where: { id: studentId },
+      data: { passwordHash, mustChangePassword: false },
+    });
+
+    res.json({ changed: true });
+  })
+);
+
 // Student login
 router.post(
   "/login",
@@ -340,7 +425,7 @@ router.post(
       { expiresIn: "8h" }
     );
 
-    res.json({ token, name: student.name, team: student.team });
+   res.json({ token, name: student.name, team: student.team, mustChangePassword: student.mustChangePassword });
   })
 );
 

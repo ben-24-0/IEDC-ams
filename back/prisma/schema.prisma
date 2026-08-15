@@ -46,6 +46,9 @@ model Student {
   isActive     Boolean  @default(true)
   isAdmin      Boolean  @default(false)
 
+  passwordResetRequested Boolean @default(false)
+  mustChangePassword     Boolean @default(false)
+
   logs          AttendanceLog[]
   dutyLeaveRequests DutyLeaveRequest[]
 
@@ -87,6 +90,7 @@ model Session {
   createdById          String
 
   logs                 AttendanceLog[]
+
   dutyLeaveRequests    DutyLeaveRequest[]
 
   createdAt            DateTime       @default(now())

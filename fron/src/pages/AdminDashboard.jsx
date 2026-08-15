@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { adminApi } from "../api/client";
+import CopyModal from "../components/copyModal";
 
 const THEMES = {
   light: {
@@ -46,12 +47,14 @@ const ROLE_OPTIONS = ["LEAD", "MEMBER"];
 
 export default function AdminDashboard({ onLogout }) {
   const [tab, setTab] = useState("Sessions");
-  const [mode, setMode] = useState(() => localStorage.getItem("themeMode") || "dark");
+  const [mode, setMode] = useState(
+    () => localStorage.getItem("themeMode") || "dark",
+  );
   const t = { ...THEMES[mode], mode };
-  
-    useEffect(() => {
-      localStorage.setItem("themeMode", mode);
-    }, [mode]);
+
+  useEffect(() => {
+    localStorage.setItem("themeMode", mode);
+  }, [mode]);
 
   return (
     <div
@@ -546,7 +549,9 @@ function SessionsTab({ t }) {
   }, [detail?.id]);
 
   useEffect(() => {
-    setPhoneNfcSupported(typeof window !== "undefined" && "NDEFReader" in window);
+    setPhoneNfcSupported(
+      typeof window !== "undefined" && "NDEFReader" in window,
+    );
   }, []);
 
   useEffect(() => {
@@ -557,7 +562,6 @@ function SessionsTab({ t }) {
       }
     };
   }, []);
-
 
   const session = detail;
   const attendanceRows = session
@@ -729,104 +733,99 @@ function SessionsTab({ t }) {
   };
 
   const stopPhoneScan = () => {
-  if (phoneScanAbortRef.current) {
-    phoneScanAbortRef.current.abort();
-    phoneScanAbortRef.current = null;
-  }
+    if (phoneScanAbortRef.current) {
+      phoneScanAbortRef.current.abort();
+      phoneScanAbortRef.current = null;
+    }
 
-  setPhoneScanning(false);
-  setPhoneScanMsg("");
-};
+    setPhoneScanning(false);
+    setPhoneScanMsg("");
+  };
 
-const handlePhoneAttendanceTap = async () => {
-  if (!session || session.status !== "ACTIVE") return;
-  if (!("NDEFReader" in window)) {
-    setPhoneScanMsg("NFC not supported on this device");
-    return;
-  }
-
-  // If already scanning, clicking the button turns scanning OFF.
-  if (phoneScanning) {
-    stopPhoneScan();
-    setPhoneScanMsg("NFC scanner stopped");
-    setTimeout(() => setPhoneScanMsg(""), 2500);
-    return;
-  }
-
-  setPhoneScanning(true);
-  setPhoneScanMsg("READY — tap NFC cards...");
-
-  const abortController = new AbortController();
-  phoneScanAbortRef.current = abortController;
-
-  try {
-    const ndef = new NDEFReader();
-
-    ndef.onreading = async (event) => {
-      const rfidUid = normalizeUid(event.serialNumber);
-
-      if (!rfidUid) {
-        setPhoneScanMsg("tag detected, but UID unavailable");
-        return;
-      }
-
-      // Show immediate feedback while the API request is happening.
-      setPhoneScanMsg(`scanning ${rfidUid}...`);
-
-      try {
-        const result = await adminApi.attendanceTap(
-          rfidUid,
-          session.id
-        );
-
-        const studentName = result?.log?.student?.name;
-
-        setPhoneScanMsg(
-          studentName
-            ? `✓ ${studentName} marked present — ready for next card`
-            : `✓ ${rfidUid} marked present — ready for next card`
-        );
-
-        // Refresh attendance without stopping NFC scanning.
-        await loadDetail(session.id);
-        await loadSessions();
-      } catch (err) {
-        console.error("Attendance tap failed:", err);
-
-        setPhoneScanMsg(
-          err.message
-            ? `✕ ${err.message} — ready for next card`
-            : "✕ attendance failed — ready for next card"
-        );
-      }
-    };
-
-    ndef.onreadingerror = () => {
-      // Do NOT stop the scanner on a single failed read.
-      setPhoneScanMsg("NFC read error — ready for next card");
-    };
-
-    await ndef.scan({
-      signal: abortController.signal,
-    });
-
-    setPhoneScanMsg("READY — tap NFC cards...");
-  } catch (err) {
-    // Abort is expected when the admin presses the button to stop.
-    if (err?.name === "AbortError") {
+  const handlePhoneAttendanceTap = async () => {
+    if (!session || session.status !== "ACTIVE") return;
+    if (!("NDEFReader" in window)) {
+      setPhoneScanMsg("NFC not supported on this device");
       return;
     }
 
-    console.error("NFC scan failed:", err);
+    // If already scanning, clicking the button turns scanning OFF.
+    if (phoneScanning) {
+      stopPhoneScan();
+      setPhoneScanMsg("NFC scanner stopped");
+      setTimeout(() => setPhoneScanMsg(""), 2500);
+      return;
+    }
 
-    setPhoneScanMsg(
-      err.message || "NFC scan failed"
-    );
+    setPhoneScanning(true);
+    setPhoneScanMsg("READY — tap NFC cards...");
 
-    setPhoneScanning(false);
-    phoneScanAbortRef.current = null;
-  }
-};
+    const abortController = new AbortController();
+    phoneScanAbortRef.current = abortController;
+
+    try {
+      const ndef = new NDEFReader();
+
+      ndef.onreading = async (event) => {
+        const rfidUid = normalizeUid(event.serialNumber);
+
+        if (!rfidUid) {
+          setPhoneScanMsg("tag detected, but UID unavailable");
+          return;
+        }
+
+        // Show immediate feedback while the API request is happening.
+        setPhoneScanMsg(`scanning ${rfidUid}...`);
+
+        try {
+          const result = await adminApi.attendanceTap(rfidUid, session.id);
+
+          const studentName = result?.log?.student?.name;
+
+          setPhoneScanMsg(
+            studentName
+              ? `✓ ${studentName} marked present — ready for next card`
+              : `✓ ${rfidUid} marked present — ready for next card`,
+          );
+
+          // Refresh attendance without stopping NFC scanning.
+          await loadDetail(session.id);
+          await loadSessions();
+        } catch (err) {
+          console.error("Attendance tap failed:", err);
+
+          setPhoneScanMsg(
+            err.message
+              ? `✕ ${err.message} — ready for next card`
+              : "✕ attendance failed — ready for next card",
+          );
+        }
+      };
+
+      ndef.onreadingerror = () => {
+        // Do NOT stop the scanner on a single failed read.
+        setPhoneScanMsg("NFC read error — ready for next card");
+      };
+
+      await ndef.scan({
+        signal: abortController.signal,
+      });
+
+      setPhoneScanMsg("READY — tap NFC cards...");
+    } catch (err) {
+      // Abort is expected when the admin presses the button to stop.
+      if (err?.name === "AbortError") {
+        return;
+      }
+
+      console.error("NFC scan failed:", err);
+
+      setPhoneScanMsg(err.message || "NFC scan failed");
+
+      setPhoneScanning(false);
+      phoneScanAbortRef.current = null;
+    }
+  };
 
   if (loading)
     return (
@@ -1206,7 +1205,8 @@ const handlePhoneAttendanceTap = async () => {
                   marginTop: "6px",
                 }}
               >
-                uploaded: {new Date(session.dutyLeaveDocUploadedAt).toLocaleString()}
+                uploaded:{" "}
+                {new Date(session.dutyLeaveDocUploadedAt).toLocaleString()}
               </div>
             )}
           </div>
@@ -1308,7 +1308,9 @@ const handlePhoneAttendanceTap = async () => {
                         color: t.mutedText,
                       }}
                     >
-                      {(req.student?.team || "N/A") + " · " + (req.student?.role || "N/A")}
+                      {(req.student?.team || "N/A") +
+                        " · " +
+                        (req.student?.role || "N/A")}
                     </div>
                     <div
                       style={{
@@ -1318,7 +1320,10 @@ const handlePhoneAttendanceTap = async () => {
                         marginTop: "4px",
                       }}
                     >
-                      requested: {req.requestedAt ? new Date(req.requestedAt).toLocaleString() : "-"}
+                      requested:{" "}
+                      {req.requestedAt
+                        ? new Date(req.requestedAt).toLocaleString()
+                        : "-"}
                     </div>
                   </div>
                 ))}
@@ -1358,9 +1363,7 @@ const handlePhoneAttendanceTap = async () => {
                   }}
                   onClick={handlePhoneAttendanceTap}
                 >
-                  {phoneScanning
-                    ? "■ STOP SCANNING"
-                    : "MARK ATTENDANCE"}
+                  {phoneScanning ? "■ STOP SCANNING" : "MARK ATTENDANCE"}
                 </button>
                 {phoneScanMsg && (
                   <span
@@ -1544,6 +1547,8 @@ function StudentsTab({ t }) {
   const [editForm, setEditForm] = useState({});
   const [approvingId, setApprovingId] = useState(null);
   const [statusNotice, setStatusNotice] = useState(null);
+  const [resetPassword, setResetPassword] = useState(null);
+
   const [addForm, setAddForm] = useState({
     name: "",
     role: "",
@@ -1551,28 +1556,38 @@ function StudentsTab({ t }) {
     rfidUid: "",
   });
 
-  const load = async () => {
-    setLoading(true);
-    try {
-      const [p, r, a] = await Promise.all([
-        adminApi.getPendingStudents(),
-        adminApi.getStudents(),
-        adminApi.getArchivedStudents
-          ? adminApi.getArchivedStudents()
-          : adminApi.getArchived
+const load = async () => {
+  setLoading(true);
+
+  try {
+    const [p, r, a] = await Promise.all([
+      adminApi.getPendingStudents(),
+      adminApi.getStudents(),
+      adminApi.getArchivedStudents
+        ? adminApi.getArchivedStudents()
+        : adminApi.getArchived
           ? adminApi.getArchived()
           : [],
-      ]);
-      setPending(p || []);
-      setRoster(r || []);
-      setArchived(a || []);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
+    ]);
 
+    console.log(
+      "RESET DEBUG:",
+      r.map((s) => ({
+        name: s.name,
+        id: s.id,
+        passwordResetRequested: s.passwordResetRequested,
+      }))
+    );
+
+    setPending(p || []);
+    setRoster(r || []);
+    setArchived(a || []);
+  } catch (err) {
+    console.error(err);
+  } finally {
+    setLoading(false);
+  }
+};
   useEffect(() => {
     load();
   }, []);
@@ -1583,8 +1598,14 @@ function StudentsTab({ t }) {
   };
 
   // Safe fallback arrays for option datalists
-  const teamsList = typeof TEAM_OPTIONS !== "undefined" ? TEAM_OPTIONS : Array.from(new Set(roster.map(s => s.team).filter(Boolean)));
-  const rolesList = typeof ROLE_OPTIONS !== "undefined" ? ROLE_OPTIONS : Array.from(new Set(roster.map(s => s.role).filter(Boolean)));
+  const teamsList =
+    typeof TEAM_OPTIONS !== "undefined"
+      ? TEAM_OPTIONS
+      : Array.from(new Set(roster.map((s) => s.team).filter(Boolean)));
+  const rolesList =
+    typeof ROLE_OPTIONS !== "undefined"
+      ? ROLE_OPTIONS
+      : Array.from(new Set(roster.map((s) => s.role).filter(Boolean)));
 
   // --- Handlers ---
   const handleApprove = async (id) => {
@@ -1608,7 +1629,11 @@ function StudentsTab({ t }) {
   };
 
   const handleReject = async (id, name) => {
-    if (!confirm(`Reject ${name}? This will remove the pending request completely.`))
+    if (
+      !confirm(
+        `Reject ${name}? This will remove the pending request completely.`,
+      )
+    )
       return;
     try {
       await adminApi.rejectStudent(id);
@@ -1684,6 +1709,24 @@ function StudentsTab({ t }) {
       alert(err.message || "Failed to update admin access");
     }
   };
+  
+
+// const [resetPassword, setResetPassword] = useState(null);
+
+const handleResetPassword = async (id, name) => {
+  try {
+    const res = await adminApi.resetStudentPassword(id);
+
+    setResetPassword({
+      name,
+      password: res.tempPassword,
+    });
+
+    load();
+  } catch (err) {
+    alert(err.message || "reset failed");
+  }
+};
 
   const handleRestoreArchived = async (id) => {
     try {
@@ -1763,6 +1806,7 @@ function StudentsTab({ t }) {
   }
 
   return (
+        
     <div style={{ fontFamily: "Space Grotesk, sans-serif" }}>
       <datalist id="team-options">
         {teamsList.map((team) => (
@@ -1774,7 +1818,15 @@ function StudentsTab({ t }) {
           <option key={role} value={role} />
         ))}
       </datalist>
-
+        {resetPassword && (
+    <CopyModal
+      t={t}
+      title="PASSWORD RESET"
+      label={`Temporary password for ${resetPassword.name}`}
+      value={resetPassword.password}
+      onClose={() => setResetPassword(null)}
+    />
+  )}
       {/* Notification Toast */}
       {statusNotice && (
         <div
@@ -1856,14 +1908,14 @@ function StudentsTab({ t }) {
         <div>
           {/* Toolbar */}
           <div
-style={{
-  display: "flex",
-  flexWrap: "wrap",
-  gap: "10px",
-  justifyContent: "space-between", // 👈 Fixed CSS camelCase property
-  alignItems: "center",
-  marginBottom: "16px",
-}}
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "10px",
+              justifyContent: "space-between", // 👈 Fixed CSS camelCase property
+              alignItems: "center",
+              marginBottom: "16px",
+            }}
           >
             <div
               style={{
@@ -2174,20 +2226,41 @@ style={{
                             >
                               {s.name}
                             </div>
-                            <span
-                              style={{
-                                fontFamily: "JetBrains Mono, monospace",
-                                fontSize: "9px",
-                                fontWeight: 700,
-                                padding: "2px 6px",
-                                background: "#22C55E",
-                                color: "#fff",
-                                border: "1px solid #000",
-                                textTransform: "uppercase",
-                              }}
+                            <div
+                              style={{ display: "flex", alignItems: "center" }}
                             >
-                              Active
-                            </span>
+                              <span
+                                style={{
+                                  fontFamily: "JetBrains Mono, monospace",
+                                  fontSize: "9px",
+                                  fontWeight: 700,
+                                  padding: "2px 6px",
+                                  background: "#22C55E",
+                                  color: "#fff",
+                                  border: "1px solid #000",
+                                  textTransform: "uppercase",
+                                }}
+                              >
+                                Active
+                              </span>
+
+                              {s.passwordResetRequested && (
+                                <span
+                                  style={{
+                                    fontFamily: "JetBrains Mono, monospace",
+                                    fontSize: "9px",
+                                    fontWeight: 700,
+                                    padding: "2px 6px",
+                                    background: "#F59E0B",
+                                    color: "#000",
+                                    border: "1px solid #000",
+                                    marginLeft: "6px",
+                                  }}
+                                >
+                                  RESET REQUESTED
+                                </span>
+                              )}
+                            </div>
                           </div>
 
                           <div
@@ -2238,7 +2311,9 @@ style={{
                                   fontWeight: 700,
                                 }}
                               >
-                                {s.isAdmin ? "Admin Access Enabled" : "Standard Member"}
+                                {s.isAdmin
+                                  ? "Admin Access Enabled"
+                                  : "Standard Member"}
                               </span>
                             </div>
                           </div>
@@ -2299,6 +2374,23 @@ style={{
                           >
                             Delete
                           </button>
+                          {s.passwordResetRequested && (
+                            <button
+                              className="brutal-btn"
+                              style={{
+                                background: "#F59E0B",
+                                color: "#000",
+                                padding: "5px 10px",
+                                fontSize: "11px",
+                                fontWeight: 700,
+                                flex: 1,
+                                minWidth: "100px",
+                              }}
+                              onClick={() => handleResetPassword(s.id, s.name)}
+                            >
+                              Reset Password
+                            </button>
+                          )}
                         </div>
                       </>
                     )}
@@ -2504,8 +2596,7 @@ style={{
                                     </span>
                                     <span
                                       style={{
-                                        fontFamily:
-                                          "JetBrains Mono, monospace",
+                                        fontFamily: "JetBrains Mono, monospace",
                                         fontSize: "10px",
                                         opacity: 0.6,
                                       }}
@@ -2927,15 +3018,9 @@ function CaptureButton({ t, onCaptured }) {
             setUseNFC((prev) => !prev);
             setMsg("");
           }}
-          title={
-            useNFC
-              ? "Switch to server scanner"
-              : "Switch to mobile NFC"
-          }
+          title={useNFC ? "Switch to server scanner" : "Switch to mobile NFC"}
           aria-label={
-            useNFC
-              ? "Switch to server scanner"
-              : "Switch to mobile NFC"
+            useNFC ? "Switch to server scanner" : "Switch to mobile NFC"
           }
         >
           {useNFC ? "📱" : "🔌"}
@@ -2954,14 +3039,10 @@ function CaptureButton({ t, onCaptured }) {
         onClick={useNFC ? handleMobileNFC : handleServerCapture}
         disabled={capturing}
         title={
-          useNFC
-            ? "Tap NFC card on phone"
-            : "Capture from server RFID scanner"
+          useNFC ? "Tap NFC card on phone" : "Capture from server RFID scanner"
         }
         aria-label={
-          useNFC
-            ? "Tap NFC card on phone"
-            : "Capture from server RFID scanner"
+          useNFC ? "Tap NFC card on phone" : "Capture from server RFID scanner"
         }
       >
         {capturing ? "..." : "📇"}

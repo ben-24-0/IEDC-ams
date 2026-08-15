@@ -1,4 +1,4 @@
-const API_ORIGIN = "https://iedc-ams.onrender.com"//http://localhost:4000";
+const API_ORIGIN = "http://localhost:4000";//"https://iedc-ams.onrender.com"
 const BASE_URL = `${API_ORIGIN}/api`;
 
 async function request(path, options = {}, tokenKey = "adminToken") {
@@ -59,6 +59,8 @@ export const adminApi = {
     }),
   updateStudent: (id, data) =>
     request(`/students/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  resetStudentPassword: (id) =>
+  request(`/students/${id}/reset-password`, { method: "PATCH" }),
   grantStudentAdmin: (id) =>
     request(`/students/${id}/grant-admin`, { method: "PATCH" }),
   revokeStudentAdmin: (id) =>
@@ -150,21 +152,52 @@ export const studentApi = {
       method: "POST",
       body: JSON.stringify({ name, username, password }),
     }),
+
   login: (username, password) =>
     request("/students/login", {
       method: "POST",
       body: JSON.stringify({ username, password }),
     }),
-    
+
+  forgotPassword: (username) =>
+    request(
+      "/students/forgot-password",
+      {
+        method: "POST",
+        body: JSON.stringify({ username }),
+      },
+      "studentToken",
+    ),
+changePassword: (currentPassword, newPassword) =>
+  request(
+    "/students/me/password",
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        currentPassword,
+        newPassword,
+      }),
+    },
+    "studentToken",
+  ),
   getStudents: () => request("/students", {}, "studentToken"),
   getSessions: () => request("/sessions", {}, "studentToken"),
   getSession: (id) => request(`/sessions/${id}`, {}, "studentToken"),
+
   requestDutyLeave: (sessionId) =>
     request(
       `/sessions/${sessionId}/duty-leave/request`,
       { method: "POST" },
       "studentToken",
     ),
+
   uploadMinutes: (sessionId, minutes) =>
-  request(`/sessions/${sessionId}/minutes`, { method: "PATCH", body: JSON.stringify({ minutes }) }, "studentToken"),
+    request(
+      `/sessions/${sessionId}/minutes`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ minutes }),
+      },
+      "studentToken",
+    ),
 };

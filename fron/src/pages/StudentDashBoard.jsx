@@ -596,7 +596,156 @@ function CalendarView({
 //     </div>
 //   );
 // }
+function ForcedPasswordChangeModal({ t, onChanged }) {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    if (newPassword !== confirm) {
+      setError("passwords don't match");
+      return;
+    }
+    setLoading(true);
+    try {
+      await studentApi.changePassword(currentPassword, newPassword);
+      localStorage.setItem("mustChangePassword", "false");
+      onChanged();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+<div
+  style={{
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,0.75)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 100,
+    color: t.ink,
+  }}
+>
+  <form
+    onSubmit={handleSubmit}
+    style={{
+      border: `4px solid ${t.border}`,
+      boxShadow: `8px 8px 0 ${t.border}`,
+      background: t.panel,
+      color: t.ink,
+      padding: "32px",
+      width: "340px",
+    }}
+  >
+    <h1
+      style={{
+        fontFamily: "Space Grotesk, sans-serif",
+        fontSize: "20px",
+        marginBottom: "8px",
+        color: t.ink,
+      }}
+    >
+      CHANGE PASSWORD REQUIRED
+    </h1>
+
+    <div
+      style={{
+        fontFamily: "JetBrains Mono, monospace",
+        fontSize: "11px",
+        color: t.mutedText,
+        marginBottom: "18px",
+        
+      }}
+    >
+      you're using a temporary password - set a new one to continue
+    </div>
+
+    <input
+      className="brutal-input"
+      type="password"
+      placeholder="current (temp) password"
+      style={{
+        marginBottom: "12px",
+        color: t.ink,
+        background: t.panel,
+        border: "2px solid #666",
+      }}
+      value={currentPassword}
+      onChange={(e) => setCurrentPassword(e.target.value)}
+    />
+
+    <input
+      className="brutal-input"
+      type="password"
+      placeholder="new password"
+      style={{
+        marginBottom: "12px",
+        color: t.ink,
+        background: t.panel,
+        border: "2px solid #666",
+      }}
+      value={newPassword}
+      onChange={(e) => setNewPassword(e.target.value)}
+    />
+
+    <input
+      className="brutal-input"
+      type="password"
+      placeholder="confirm new password"
+      style={{
+        marginBottom: "16px",
+        color: t.ink,
+        background: t.panel,
+        border: "2px solid #666"
+      }}
+      value={confirm}
+      onChange={(e) => setConfirm(e.target.value)}
+    />
+
+    {error && (
+      <div
+        style={{
+          fontFamily: "JetBrains Mono, monospace",
+          fontSize: "12px",
+          color: "#FF5C5C",
+          marginBottom: "14px",
+          
+        }}
+      >
+        {error}
+      </div>
+    )}
+
+    <button
+      type="submit"
+      disabled={loading}
+      className="brutal-btn"
+      style={{
+        background: t.accentSolid,
+        color: "#fff",
+        padding: "10px",
+        width: "100%",
+        fontSize: "13px",
+      }}
+    >
+      {loading ? "..." : "CHANGE PASSWORD"}
+    </button>
+  </form>
+</div>
+  );
+}
+
+
+//StudentDashBoard
 export default function StudentDashboard({ onLogout }) {
   const [mode, setMode] = useState(() => localStorage.getItem("themeMode") || "dark");
   const t = { ...THEMES[mode], mode };
@@ -623,6 +772,8 @@ export default function StudentDashboard({ onLogout }) {
   const [roleFilter, setRoleFilter] = useState("All");
 //doc team
 const isDocTeam = localStorage.getItem("studentTeam") === "DOCUMENTATION";
+const [mustChangePassword, setMustChangePassword] = useState(localStorage.getItem("mustChangePassword") === "true");
+
 
   useEffect(() => {
     const fetchData = () => {
@@ -805,6 +956,12 @@ const rows = useMemo(() => {
   }
 
   return (
+    <>
+      
+
+        {mustChangePassword && (
+  <ForcedPasswordChangeModal t={t} onChanged={() => setMustChangePassword(false)} />
+)}
     <div
       className="student-dashboard"
       style={{
@@ -1353,5 +1510,7 @@ const rows = useMemo(() => {
   </div>
 )}
     </div>
+    </>
+
   );
 }
