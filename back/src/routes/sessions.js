@@ -65,12 +65,89 @@ function serializeSession(session) {
     confirmedAt: session.confirmedAt ? session.confirmedAt.toISOString() : null,
     createdAt: session.createdAt ? session.createdAt.toISOString() : null,
     updatedAt: session.updatedAt ? session.updatedAt.toISOString() : null,
+    dutyLeaveDocUploadedAt: session.dutyLeaveDocUploadedAt
+      ? session.dutyLeaveDocUploadedAt.toISOString()
+      : null,
     ...buildShareLinks(session),
   };
 }
 
+function isAdminViewer(req) {
+  return req.admin?.role === "admin";
+}
+
+function serializeDutyLeaveRequest(request) {
+  return {
+    id: request.id,
+    sessionId: request.sessionId,
+    studentId: request.studentId,
+    requestedAt: request.requestedAt ? request.requestedAt.toISOString() : null,
+    student: request.student
+      ? {
+          id: request.student.id,
+          name: request.student.name,
+          team: request.student.team,
+          role: request.student.role,
+        }
+      : null,
+  };
+}
+
+function serializeSessionWithView(session, req) {
+  const base = serializeSession(session);
+  const currentStudentId = req.admin?.studentId || null;
+  const adminView = isAdminViewer(req);
+  const requests = session.dutyLeaveRequests || [];
+
+  const dutyLeaveRequestedByMe = currentStudentId
+    ? requests.some((item) => item.studentId === currentStudentId)
+    : false;
+  const canSeeDutyLeaveDoc = adminView || dutyLeaveRequestedByMe;
+
+  return {
+    ...base,
+    present: (session.logs || []).map((log) => ({
+      id: log.student.id,
+      name: log.student.name,
+      time: log.scannedAt,
+    })),
+    logs: session.logs || [],
+    dutyLeaveRequestCount: requests.length,
+    dutyLeaveRequestedByMe,
+    hasDutyLeaveDocument: !!session.dutyLeaveDocUrl,
+    dutyLeaveDocUrl: canSeeDutyLeaveDoc ? session.dutyLeaveDocUrl : null,
+    dutyLeaveRequests: adminView
+      ? requests.map(serializeDutyLeaveRequest)
+      : undefined,
+  };
+}
+
+function requireAdmin(req, res) {
+  if (!isAdminViewer(req)) {
+    res.status(403).json({ error: "admin access required" });
+    return false;
+  }
+  return true;
+}
+
+function parseDocumentUrl(rawUrl) {
+  if (!rawUrl || !rawUrl.trim()) return null;
+  const value = rawUrl.trim();
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return null;
+    }
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 // create a session (admin picks title, optional scheduled time)
 router.post("/", requireAuth, async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
   const { title, agenda, venue, notificationChannel, notificationTarget } =
     req.body;
   const scheduledTime = parseScheduledTime(req.body);
@@ -100,38 +177,36 @@ router.post("/", requireAuth, async (req, res) => {
 router.get("/", requireAuth, async (req, res) => {
   const sessions = await prisma.session.findMany({
     orderBy: { createdAt: "desc" },
-    include: { logs: { include: { student: true } } },
+    include: {
+      logs: { include: { student: true } },
+      dutyLeaveRequests: {
+        include: { student: true },
+        orderBy: { requestedAt: "asc" },
+      },
+    },
   });
-  res.json(
-    sessions.map((session) => ({
-      ...serializeSession(session),
-      present: session.logs.map((log) => ({
-        id: log.student.id,
-        name: log.student.name,
-        time: log.scannedAt,
-      })),
-    })),
-  );
+  res.json(sessions.map((session) => serializeSessionWithView(session, req)));
 });
 
 // get 1 session with full attendance detail
 router.get("/:id", requireAuth, async (req, res) => {
   const session = await prisma.session.findUnique({
     where: { id: req.params.id },
-    include: { logs: { include: { student: true } } },
+    include: {
+      logs: { include: { student: true } },
+      dutyLeaveRequests: {
+        include: { student: true },
+        orderBy: { requestedAt: "asc" },
+      },
+    },
   });
   if (!session) return res.status(404).json({ error: "not found" });
-  res.json({
-    ...serializeSession(session),
-    present: session.logs.map((log) => ({
-      id: log.student.id,
-      name: log.student.name,
-      time: log.scannedAt,
-    })),
-  });
+  res.json(serializeSessionWithView(session, req));
 });
 
 router.patch("/:id", requireAuth, async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
   const existing = await prisma.session.findUnique({
     where: { id: req.params.id },
   });
@@ -170,6 +245,8 @@ router.patch("/:id", requireAuth, async (req, res) => {
 });
 
 router.patch("/:id/confirm", requireAuth, async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
   const existing = await prisma.session.findUnique({
     where: { id: req.params.id },
   });
@@ -217,6 +294,29 @@ router.patch("/:id/minutes", requireAuth, async (req, res) => {
 
 // start session (device button press hits this via a small esp32-triggered call, or admin manually)
 router.patch("/:id/start", requireAuth, async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  const session = await prisma.session.update({
+    where: { id: req.params.id },
+    data: { status: "ACTIVE" },
+  });
+  res.json(session);
+});
+
+router.patch("/:id/restart", requireAuth, async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  const existing = await prisma.session.findUnique({
+    where: { id: req.params.id },
+  });
+
+  if (!existing) return res.status(404).json({ error: "not found" });
+  if (existing.status !== "CLOSED") {
+    return res
+      .status(400)
+      .json({ error: "only closed sessions can be restarted" });
+  }
+
   const session = await prisma.session.update({
     where: { id: req.params.id },
     data: { status: "ACTIVE" },
@@ -226,6 +326,8 @@ router.patch("/:id/start", requireAuth, async (req, res) => {
 
 // close session
 router.patch("/:id/close", requireAuth, async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
   const session = await prisma.session.update({
     where: { id: req.params.id },
     data: { status: "CLOSED" },
@@ -233,9 +335,78 @@ router.patch("/:id/close", requireAuth, async (req, res) => {
   res.json(session);
 });
 
+router.post("/:id/duty-leave/request", requireAuth, async (req, res) => {
+  const studentId = req.admin?.studentId;
+  if (!studentId || req.admin?.role !== "student") {
+    return res.status(403).json({ error: "student login required" });
+  }
+
+  const session = await prisma.session.findUnique({ where: { id: req.params.id } });
+  if (!session) return res.status(404).json({ error: "session not found" });
+
+  const request = await prisma.dutyLeaveRequest.upsert({
+    where: {
+      sessionId_studentId: {
+        sessionId: req.params.id,
+        studentId,
+      },
+    },
+    update: {},
+    create: {
+      sessionId: req.params.id,
+      studentId,
+    },
+    include: { student: true },
+  });
+
+  res.json({
+    requested: true,
+    request: serializeDutyLeaveRequest(request),
+  });
+});
+
+router.patch("/:id/duty-leave/document", requireAuth, async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  const url = parseDocumentUrl(req.body?.url);
+  if (!url) {
+    return res.status(400).json({ error: "valid http(s) URL is required" });
+  }
+
+  const session = await prisma.session.update({
+    where: { id: req.params.id },
+    data: {
+      dutyLeaveDocUrl: url,
+      dutyLeaveDocUploadedAt: new Date(),
+    },
+  });
+
+  res.json(serializeSession(session));
+});
+
+router.get("/:id/duty-leave/requests", requireAuth, async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  const session = await prisma.session.findUnique({ where: { id: req.params.id } });
+  if (!session) return res.status(404).json({ error: "not found" });
+
+  const requests = await prisma.dutyLeaveRequest.findMany({
+    where: { sessionId: req.params.id },
+    include: { student: true },
+    orderBy: { requestedAt: "asc" },
+  });
+
+  res.json(requests.map(serializeDutyLeaveRequest));
+});
+
 // delete an accidental session
 router.delete("/:id", requireAuth, async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
   await prisma.attendanceLog.deleteMany({
+    where: { sessionId: req.params.id },
+  });
+  await prisma.dutyLeaveRequest.deleteMany({
     where: { sessionId: req.params.id },
   });
   await prisma.session.delete({ where: { id: req.params.id } });

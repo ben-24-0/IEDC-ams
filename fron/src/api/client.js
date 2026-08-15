@@ -1,4 +1,4 @@
-const API_ORIGIN = "https://iedc-ams.onrender.com"//(import.meta.env.VITE_API_BASE_URL || "http://localhost:4000").replace(/\/+$/, "");
+const API_ORIGIN = /*"https://iedc-ams.onrender.com"*/"http://localhost:4000";
 const BASE_URL = `${API_ORIGIN}/api`;
 
 async function request(path, options = {}, tokenKey = "adminToken") {
@@ -64,7 +64,16 @@ export const adminApi = {
   revokeStudentAdmin: (id) =>
     request(`/students/${id}/revoke-admin`, { method: "PATCH" }),
   startSession: (id) => request(`/sessions/${id}/start`, { method: "PATCH" }),
+  restartSession: (id) =>
+    request(`/sessions/${id}/restart`, { method: "PATCH" }),
   closeSession: (id) => request(`/sessions/${id}/close`, { method: "PATCH" }),
+  uploadDutyLeaveDocument: (id, url) =>
+    request(`/sessions/${id}/duty-leave/document`, {
+      method: "PATCH",
+      body: JSON.stringify({ url }),
+    }),
+  getDutyLeaveRequests: (id) =>
+    request(`/sessions/${id}/duty-leave/requests`),
   deleteSession: (id) => request(`/sessions/${id}`, { method: "DELETE" }),
   getArchivedStudents: () => request("/students/archived"),
 
@@ -145,6 +154,12 @@ export const studentApi = {
   getStudents: () => request("/students", {}, "studentToken"),
   getSessions: () => request("/sessions", {}, "studentToken"),
   getSession: (id) => request(`/sessions/${id}`, {}, "studentToken"),
+  requestDutyLeave: (sessionId) =>
+    request(
+      `/sessions/${sessionId}/duty-leave/request`,
+      { method: "POST" },
+      "studentToken",
+    ),
   uploadMinutes: (sessionId, minutes) =>
   request(`/sessions/${sessionId}/minutes`, { method: "PATCH", body: JSON.stringify({ minutes }) }, "studentToken"),
 };

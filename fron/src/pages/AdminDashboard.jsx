@@ -464,6 +464,7 @@ function SessionsTab({ t }) {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [dutyLeaveLink, setDutyLeaveLink] = useState("");
 
   const loadSessions = async () => {
     try {
@@ -529,6 +530,10 @@ function SessionsTab({ t }) {
 
     return () => clearInterval(interval);
   }, [activeId]);
+
+  useEffect(() => {
+    setDutyLeaveLink(detail?.dutyLeaveDocUrl || "");
+  }, [detail?.id]);
 
 
   const session = detail;
@@ -664,6 +669,25 @@ function SessionsTab({ t }) {
     await adminApi.closeSession(activeId);
     loadSessions();
     loadDetail(activeId);
+  };
+
+  const handleRestart = async () => {
+    await adminApi.restartSession(activeId);
+    loadSessions();
+    loadDetail(activeId);
+  };
+
+  const handleUploadDutyLeaveDoc = async () => {
+    if (!session) return;
+    if (!dutyLeaveLink.trim()) {
+      alert("Enter a valid duty leave document link.");
+      return;
+    }
+
+    await adminApi.uploadDutyLeaveDocument(session.id, dutyLeaveLink.trim());
+    await loadSessions();
+    await loadDetail(session.id);
+    alert("Duty leave document link uploaded.");
   };
 
   const handleDelete = async () => {
@@ -941,6 +965,20 @@ function SessionsTab({ t }) {
                 ■ END SESSION
               </button>
             )}
+            {session.status === "CLOSED" && (
+              <button
+                className="brutal-btn"
+                style={{
+                  background: t.cyan,
+                  color: "#0B0F19",
+                  padding: "9px 16px",
+                  fontSize: "13px",
+                }}
+                onClick={handleRestart}
+              >
+                ↻ RESTART SESSION
+              </button>
+            )}
             <button
               className="brutal-btn"
               style={{
@@ -976,6 +1014,78 @@ function SessionsTab({ t }) {
             }}
           >
             {buildSessionMessage(session)}
+          </div>
+
+          <div style={{ marginBottom: "16px" }}>
+            <div
+              style={{
+                fontFamily: "Space Grotesk, sans-serif",
+                fontSize: "15px",
+                fontWeight: 700,
+                marginBottom: "8px",
+              }}
+            >
+              DUTY LEAVE DOCUMENT
+            </div>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "8px",
+                alignItems: "center",
+              }}
+            >
+              <input
+                className="brutal-input"
+                placeholder="Paste Google Drive link"
+                value={dutyLeaveLink}
+                onChange={(e) => setDutyLeaveLink(e.target.value)}
+                style={{ flex: 1, minWidth: "240px" }}
+              />
+              <button
+                className="brutal-btn"
+                style={{
+                  background: t.accentSolid,
+                  color: "#fff",
+                  padding: "8px 14px",
+                  fontSize: "12px",
+                }}
+                onClick={handleUploadDutyLeaveDoc}
+              >
+                UPLOAD LINK
+              </button>
+              {!!session.dutyLeaveDocUrl && (
+                <a
+                  href={session.dutyLeaveDocUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="brutal-btn"
+                  style={{
+                    background: t.panel,
+                    color: t.ink,
+                    padding: "8px 14px",
+                    fontSize: "12px",
+                    textDecoration: "none",
+                    display: "inline-flex",
+                    alignItems: "center",
+                  }}
+                >
+                  OPEN LINK
+                </a>
+              )}
+            </div>
+            {session.dutyLeaveDocUploadedAt && (
+              <div
+                style={{
+                  fontFamily: "JetBrains Mono, monospace",
+                  fontSize: "10px",
+                  color: t.mutedText,
+                  marginTop: "6px",
+                }}
+              >
+                uploaded: {new Date(session.dutyLeaveDocUploadedAt).toLocaleString()}
+              </div>
+            )}
           </div>
 
           <div
@@ -1020,6 +1130,77 @@ function SessionsTab({ t }) {
             >
               absent: {Math.max(totalCount - presentCount, 0)}
             </div>
+            <div
+              style={{
+                fontFamily: "JetBrains Mono, monospace",
+                fontSize: "11px",
+                border: `2px solid ${t.border}`,
+                background: t.muted,
+                padding: "5px 8px",
+              }}
+            >
+              duty leave requests: {session.dutyLeaveRequestCount || 0}
+            </div>
+          </div>
+
+          <div style={{ marginBottom: "16px" }}>
+            <div
+              style={{
+                fontFamily: "Space Grotesk, sans-serif",
+                fontSize: "15px",
+                fontWeight: 700,
+                marginBottom: "10px",
+              }}
+            >
+              DUTY LEAVE REQUESTERS
+            </div>
+            {!session.dutyLeaveRequests?.length ? (
+              <div
+                style={{
+                  fontFamily: "JetBrains Mono, monospace",
+                  fontSize: "11px",
+                  color: t.mutedText,
+                }}
+              >
+                no requests yet
+              </div>
+            ) : (
+              <div className="admin-roster-grid">
+                {session.dutyLeaveRequests.map((req) => (
+                  <div key={req.id} className="admin-roster-card">
+                    <div
+                      style={{
+                        fontFamily: "Space Grotesk, sans-serif",
+                        fontWeight: 700,
+                        fontSize: "14px",
+                        marginBottom: "5px",
+                      }}
+                    >
+                      {req.student?.name || "Unknown student"}
+                    </div>
+                    <div
+                      style={{
+                        fontFamily: "JetBrains Mono, monospace",
+                        fontSize: "10px",
+                        color: t.mutedText,
+                      }}
+                    >
+                      {(req.student?.team || "N/A") + " · " + (req.student?.role || "N/A")}
+                    </div>
+                    <div
+                      style={{
+                        fontFamily: "JetBrains Mono, monospace",
+                        fontSize: "10px",
+                        color: t.mutedText,
+                        marginTop: "4px",
+                      }}
+                    >
+                      requested: {req.requestedAt ? new Date(req.requestedAt).toLocaleString() : "-"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div style={{ marginBottom: "16px" }}>
@@ -2458,27 +2639,48 @@ function CaptureButton({ t, onCaptured }) {
   const [nfcSupported, setNfcSupported] = useState(false);
 
   useEffect(() => {
-    // Detect if device supports Web NFC API
+    // Detect Web NFC support
     if ("NDEFReader" in window) {
       setNfcSupported(true);
     }
   }, []);
 
+  // Normalize UID so phone NFC matches the format
+  // used by the ESP32/backend: 04A27F1B5E8000
+  const normalizeUid = (uid) =>
+    String(uid || "")
+      .replace(/[^a-fA-F0-9]/g, "")
+      .toUpperCase();
+
+  // ----------------------------------------
+  // SERVER / ESP32 RFID READER
+  // ----------------------------------------
   const handleServerCapture = async () => {
     setCapturing(true);
-    setMsg("waiting for tap...");
+    setMsg("waiting for card...");
+
     try {
       const uid = await adminApi.captureCard();
-      onCaptured(uid);
-      setMsg("captured!");
+      const normalizedUid = normalizeUid(uid);
+
+      if (!normalizedUid) {
+        throw new Error("Scanner returned no UID");
+      }
+
+      onCaptured(normalizedUid);
+      setMsg(`captured: ${normalizedUid}`);
     } catch (err) {
-      setMsg(err.message);
+      console.error("Server RFID capture error:", err);
+      setMsg(err.message || "capture failed");
     } finally {
       setCapturing(false);
-      setTimeout(() => setMsg(""), 2000);
+      setTimeout(() => setMsg(""), 3000);
     }
   };
 
+  // ----------------------------------------
+  // PHONE NFC
+  // ----------------------------------------
   const handleMobileNFC = async () => {
     if (!("NDEFReader" in window)) {
       setMsg("NFC not supported on this device");
@@ -2486,68 +2688,76 @@ function CaptureButton({ t, onCaptured }) {
     }
 
     setCapturing(true);
-    setMsg("tap NFC tag...");
+    setMsg("tap NFC card...");
+
     try {
       const ndef = new NDEFReader();
-      await ndef.scan();
 
       ndef.onreading = (event) => {
-        const decoder = new TextDecoder();
-        const records = event.message.records;
-        
-        // Extract UID from NDEF record
-        let uid = null;
-        
-        for (const record of records) {
-          if (record.recordType === "urn:nfc:wkt:U" || record.recordType === "uri") {
-            // URI type record
-            uid = decoder.decode(record.data);
-          } else if (record.recordType === "urn:nfc:wkt:T" || record.recordType === "text") {
-            // Text type record
-            uid = decoder.decode(record.data).slice(3); // Skip language code
-          } else if (record.recordType === ":t" || record.recordType === "t") {
-            // Simple text record
-            uid = decoder.decode(record.data);
-          }
+        console.log("NFC reading event:", event);
+        console.log("NFC serialNumber:", event.serialNumber);
+
+        /*
+         * IMPORTANT:
+         *
+         * event.serialNumber is the NFC tag/card UID.
+         *
+         * Some phones/browsers return:
+         *   04:A2:7F:1B:5E:80:00
+         *
+         * while the backend/ESP32 may use:
+         *   04A27F1B5E8000
+         *
+         * normalizeUid() removes the separators and
+         * converts it to uppercase.
+         */
+        const uid = normalizeUid(event.serialNumber);
+
+        if (!uid) {
+          console.warn("NFC tag detected but no serialNumber:", event);
+          setMsg("tag detected, but UID unavailable");
+          setCapturing(false);
+          return;
         }
 
-        // If no recognized record type, try to extract from raw data
-        if (!uid && records.length > 0) {
-          try {
-            uid = decoder.decode(records[0].data).trim();
-          } catch (e) {
-            uid = Array.from(new Uint8Array(records[0].data))
-              .map(b => b.toString(16).padStart(2, "0"))
-              .join(":");
-          }
-        }
+        console.log("Normalized NFC UID:", uid);
 
-        if (uid) {
-          onCaptured(uid);
-          setMsg("captured!");
-          setCapturing(false);
-          setTimeout(() => setMsg(""), 2000);
-        } else {
-          setMsg("no UID found");
-          setCapturing(false);
-          setTimeout(() => setMsg(""), 2000);
-        }
+        onCaptured(uid);
+        setMsg(`captured: ${uid}`);
+        setCapturing(false);
+
+        setTimeout(() => setMsg(""), 3000);
       };
 
       ndef.onreadingerror = () => {
-        setMsg("read error");
+        console.error("NFC reading error");
+        setMsg("NFC read error");
         setCapturing(false);
-        setTimeout(() => setMsg(""), 2000);
+
+        setTimeout(() => setMsg(""), 3000);
       };
+
+      await ndef.scan();
     } catch (err) {
+      console.error("NFC scan error:", err);
+
       setMsg(err.message || "NFC error");
       setCapturing(false);
-      setTimeout(() => setMsg(""), 2000);
+
+      setTimeout(() => setMsg(""), 3000);
     }
   };
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        flexWrap: "wrap",
+      }}
+    >
+      {/* Toggle between phone NFC and ESP32/server scanner */}
       {nfcSupported && (
         <button
           type="button"
@@ -2559,14 +2769,26 @@ function CaptureButton({ t, onCaptured }) {
             border: `3px solid ${t.border}`,
             fontWeight: 700,
           }}
-          onClick={() => setUseNFC(!useNFC)}
-          title={useNFC ? "Switch to server scanner" : "Switch to mobile NFC"}
-          aria-label={useNFC ? "Switch to server scanner" : "Switch to mobile NFC"}
+          onClick={() => {
+            setUseNFC((prev) => !prev);
+            setMsg("");
+          }}
+          title={
+            useNFC
+              ? "Switch to server scanner"
+              : "Switch to mobile NFC"
+          }
+          aria-label={
+            useNFC
+              ? "Switch to server scanner"
+              : "Switch to mobile NFC"
+          }
         >
           {useNFC ? "📱" : "🔌"}
         </button>
       )}
 
+      {/* Capture button */}
       <button
         type="button"
         className="brutal-btn icon-btn"
@@ -2577,18 +2799,28 @@ function CaptureButton({ t, onCaptured }) {
         }}
         onClick={useNFC ? handleMobileNFC : handleServerCapture}
         disabled={capturing}
-        title={useNFC ? "Tap NFC tag on device" : "Capture from server scanner"}
-        aria-label={useNFC ? "Tap NFC tag on device" : "Capture from server scanner"}
+        title={
+          useNFC
+            ? "Tap NFC card on phone"
+            : "Capture from server RFID scanner"
+        }
+        aria-label={
+          useNFC
+            ? "Tap NFC card on phone"
+            : "Capture from server RFID scanner"
+        }
       >
         {capturing ? "..." : "📇"}
       </button>
 
+      {/* Status */}
       {msg && (
         <span
           style={{
             fontFamily: "JetBrains Mono, monospace",
             fontSize: "10px",
             color: t.mutedText,
+            wordBreak: "break-all",
           }}
         >
           {msg}

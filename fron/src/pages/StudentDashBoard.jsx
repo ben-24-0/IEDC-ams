@@ -613,6 +613,8 @@ export default function StudentDashboard({ onLogout }) {
   const [sessions, setSessions] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [dutyLeaveBusy, setDutyLeaveBusy] = useState(false);
+  const [dutyLeaveNotice, setDutyLeaveNotice] = useState("");
 
   // Filters
   const [search, setSearch] = useState("");
@@ -673,6 +675,34 @@ const isDocTeam = localStorage.getItem("studentTeam") === "DOCUMENTATION";
   );
 
   const session = sessions.find((s) => s.id === activeId);
+  const dutyLeaveRequested = !!session?.dutyLeaveRequestedByMe;
+  const canDownloadDutyLeave = dutyLeaveRequested && !!session?.dutyLeaveDocUrl;
+
+  const handleRequestDutyLeave = async () => {
+    if (!session || dutyLeaveBusy || dutyLeaveRequested) return;
+
+    setDutyLeaveBusy(true);
+    setDutyLeaveNotice("");
+    try {
+      await studentApi.requestDutyLeave(session.id);
+      setSessions((prev) =>
+        prev.map((item) =>
+          item.id === session.id
+            ? {
+                ...item,
+                dutyLeaveRequestedByMe: true,
+                dutyLeaveRequestCount: (item.dutyLeaveRequestCount || 0) + 1,
+              }
+            : item,
+        ),
+      );
+      setDutyLeaveNotice("Duty leave request submitted.");
+    } catch (err) {
+      setDutyLeaveNotice(err.message || "Could not submit request.");
+    } finally {
+      setDutyLeaveBusy(false);
+    }
+  };
 
 const rows = useMemo(() => {
   if (!session || !roster.length) return [];
@@ -1161,6 +1191,47 @@ const rows = useMemo(() => {
           {session.status || "ACTIVE"}
         </div>
       </div>
+
+      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center", marginBottom: "14px" }}>
+        <button
+          className="brutal-btn"
+          style={{
+            background: dutyLeaveRequested ? t.muted : t.accentSolid,
+            color: dutyLeaveRequested ? t.mutedText : "#fff",
+            padding: "8px 14px",
+            fontSize: "12px",
+            cursor: dutyLeaveRequested ? "default" : "pointer",
+          }}
+          disabled={dutyLeaveRequested || dutyLeaveBusy}
+          onClick={handleRequestDutyLeave}
+        >
+          {dutyLeaveRequested ? "DUTY LEAVE REQUESTED" : dutyLeaveBusy ? "REQUESTING..." : "REQUEST DUTY LEAVE"}
+        </button>
+        {canDownloadDutyLeave && (
+          <button
+            className="brutal-btn"
+            style={{
+              background: t.cyan,
+              color: "#0B0F19",
+              padding: "8px 14px",
+              fontSize: "12px",
+            }}
+            onClick={() => window.open(session.dutyLeaveDocUrl, "_blank", "noopener,noreferrer")}
+          >
+            DOWNLOAD DUTY LEAVE
+          </button>
+        )}
+        {dutyLeaveRequested && !canDownloadDutyLeave && (
+          <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "11px", color: t.mutedText }}>
+            waiting for admin to upload the duty leave document link
+          </span>
+        )}
+      </div>
+      {dutyLeaveNotice && (
+        <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "11px", color: t.mutedText, marginBottom: "12px" }}>
+          {dutyLeaveNotice}
+        </div>
+      )}
 
 <details open>
         <summary style={{ fontFamily: "Space Grotesk, sans-serif", fontSize: "14px", cursor: "pointer", color: t.mutedText, marginBottom: "10px" }}>
