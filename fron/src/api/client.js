@@ -118,6 +118,11 @@ getArchived: () => request("/students/archived"),
       method: "POST",
       body: JSON.stringify({ studentId, sessionId, action }),
     }),
+  attendanceTap: (rfidUid, sessionId) =>
+    request("/attendance/tap", {
+      method: "POST",
+      body: JSON.stringify({ rfidUid, sessionId }),
+    }),
   sendWifi: (ssid, password) =>
     request("/device/wifi", {
       method: "POST",

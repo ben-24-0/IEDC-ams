@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { adminApi } from "../api/client";
 
 const THEMES = {
@@ -447,6 +447,12 @@ function buildWhatsappLink(session, recipient) {
   return `https://wa.me/?text=${body}`;
 }
 
+function normalizeUid(uid) {
+  return String(uid || "")
+    .replace(/[^a-fA-F0-9]/g, "")
+    .toUpperCase();
+}
+
 function SessionsTab({ t }) {
   const [sessions, setSessions] = useState([]);
   const [students, setStudents] = useState([]);
@@ -465,6 +471,10 @@ function SessionsTab({ t }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [dutyLeaveLink, setDutyLeaveLink] = useState("");
+  const [phoneNfcSupported, setPhoneNfcSupported] = useState(false);
+  const [phoneScanning, setPhoneScanning] = useState(false);
+  const [phoneScanMsg, setPhoneScanMsg] = useState("");
+  const phoneScanAbortRef = useRef(null);
 
   const loadSessions = async () => {
     try {
@@ -534,6 +544,19 @@ function SessionsTab({ t }) {
   useEffect(() => {
     setDutyLeaveLink(detail?.dutyLeaveDocUrl || "");
   }, [detail?.id]);
+
+  useEffect(() => {
+    setPhoneNfcSupported(typeof window !== "undefined" && "NDEFReader" in window);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (phoneScanAbortRef.current) {
+        phoneScanAbortRef.current.abort();
+        phoneScanAbortRef.current = null;
+      }
+    };
+  }, []);
 
 
   const session = detail;
@@ -703,6 +726,75 @@ function SessionsTab({ t }) {
     setDetail(null);
     setActiveId(null);
     await loadSessions();
+  };
+
+  const stopPhoneScan = () => {
+    if (phoneScanAbortRef.current) {
+      phoneScanAbortRef.current.abort();
+      phoneScanAbortRef.current = null;
+    }
+  };
+
+  const handlePhoneAttendanceTap = async () => {
+    if (!session || session.status !== "ACTIVE") return;
+    if (!("NDEFReader" in window)) return;
+
+    stopPhoneScan();
+    setPhoneScanning(true);
+    setPhoneScanMsg("tap NFC card on phone...");
+
+    try {
+      const ndef = new NDEFReader();
+      const abortController = new AbortController();
+      phoneScanAbortRef.current = abortController;
+      let handled = false;
+
+      ndef.onreading = async (event) => {
+        if (handled) return;
+        handled = true;
+
+        const rfidUid = normalizeUid(event.serialNumber);
+        if (!rfidUid) {
+          setPhoneScanMsg("tag detected, but UID unavailable");
+          stopPhoneScan();
+          setPhoneScanning(false);
+          setTimeout(() => setPhoneScanMsg(""), 3500);
+          return;
+        }
+
+        try {
+          const result = await adminApi.attendanceTap(rfidUid, session.id);
+          const studentName = result?.log?.student?.name;
+          setPhoneScanMsg(
+            studentName
+              ? `${studentName} marked present`
+              : `attendance marked for ${rfidUid}`,
+          );
+          await loadDetail(session.id);
+          await loadSessions();
+        } catch (err) {
+          setPhoneScanMsg(err.message || "attendance marking failed");
+        } finally {
+          stopPhoneScan();
+          setPhoneScanning(false);
+          setTimeout(() => setPhoneScanMsg(""), 3500);
+        }
+      };
+
+      ndef.onreadingerror = () => {
+        setPhoneScanMsg("NFC read error");
+        stopPhoneScan();
+        setPhoneScanning(false);
+        setTimeout(() => setPhoneScanMsg(""), 3500);
+      };
+
+      await ndef.scan({ signal: abortController.signal });
+    } catch (err) {
+      setPhoneScanMsg(err.message || "NFC scan failed");
+      stopPhoneScan();
+      setPhoneScanning(false);
+      setTimeout(() => setPhoneScanMsg(""), 3500);
+    }
   };
 
   if (loading)
@@ -1214,6 +1306,43 @@ function SessionsTab({ t }) {
             >
               ATTENDANCE
             </div>
+            {session.status === "ACTIVE" && phoneNfcSupported && (
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: "10px",
+                  alignItems: "center",
+                  marginBottom: "12px",
+                }}
+              >
+                <button
+                  type="button"
+                  className="brutal-btn"
+                  style={{
+                    background: t.cyan,
+                    color: "#0B0F19",
+                    padding: "8px 14px",
+                    fontSize: "12px",
+                  }}
+                  onClick={handlePhoneAttendanceTap}
+                  disabled={phoneScanning}
+                >
+                  {phoneScanning ? "WAITING FOR TAP..." : "MARK ATTENDANCE (PHONE NFC)"}
+                </button>
+                {phoneScanMsg && (
+                  <span
+                    style={{
+                      fontFamily: "JetBrains Mono, monospace",
+                      fontSize: "11px",
+                      color: t.mutedText,
+                    }}
+                  >
+                    {phoneScanMsg}
+                  </span>
+                )}
+              </div>
+            )}
             <div className="admin-roster-grid">
               {attendanceRows.map((student) => (
                 <div
@@ -2644,13 +2773,6 @@ function CaptureButton({ t, onCaptured }) {
       setNfcSupported(true);
     }
   }, []);
-
-  // Normalize UID so phone NFC matches the format
-  // used by the ESP32/backend: 04A27F1B5E8000
-  const normalizeUid = (uid) =>
-    String(uid || "")
-      .replace(/[^a-fA-F0-9]/g, "")
-      .toUpperCase();
 
   // ----------------------------------------
   // SERVER / ESP32 RFID READER
