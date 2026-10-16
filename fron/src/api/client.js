@@ -1,4 +1,4 @@
-const API_ORIGIN = "https://raspberrypi.taile25cfa.ts.net";//"https://iedc-ams.onrender.com";
+const API_ORIGIN = "https://raspberrypi-nasa-0007.taile25cfa.ts.net";//"https://iedc-ams.onrender.com";
 const BASE_URL = `${API_ORIGIN}/api`;
 
 async function request(path, options = {}, tokenKey = "adminToken") {
